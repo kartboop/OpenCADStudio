@@ -4,29 +4,22 @@ pub(crate) mod control;
 pub(crate) fn automation_action_names() -> &'static [&'static str] {
     control::action_names()
 }
-pub(crate) mod config;
-#[cfg(not(target_arch = "wasm32"))]
-pub use automation::{export_headless, run_batch, serve};
 mod annotation_data;
-mod extraction_catalog;
 mod array_grips;
-mod block_actions;
-mod block_parameter_properties;
-mod insert_attributes;
-#[cfg(test)]
-mod insert_attributes_tests;
-mod block_alignment;
-mod block_feedback;
-mod block_cycle_order;
-mod block_grip_set;
-mod block_construction;
-mod block_constraint_status;
 mod block_action_bars;
+mod block_actions;
+mod block_alignment;
 mod block_authoring_edit;
+mod block_constraint_status;
+mod block_construction;
+mod block_cycle_order;
 mod block_editor;
 #[cfg(test)]
 mod block_editor_tests;
+mod block_feedback;
+mod block_grip_set;
 mod block_lookup;
+mod block_parameter_properties;
 mod block_properties;
 mod block_properties_table;
 #[cfg(test)]
@@ -38,6 +31,11 @@ mod block_test_tests;
 mod block_visibility;
 pub(crate) mod calc;
 mod command_driver;
+pub(crate) mod config;
+mod extraction_catalog;
+mod insert_attributes;
+#[cfg(test)]
+mod insert_attributes_tests;
 pub(crate) use command_driver::{
     copy_to_clipboard_kernel, define_block_raw_doc, paste_entities_kernel, PasteSpace,
 };
@@ -50,11 +48,12 @@ mod dimension_convert_tests;
 #[cfg(test)]
 mod dimension_preview_tests;
 mod dock;
-mod tab_document;
 mod drafting_settings;
+mod drawing_properties;
 pub(crate) mod expr_eval;
 pub(crate) mod filter_dialog;
 mod find_replace;
+mod geometry_ops;
 pub(crate) mod helpers;
 mod history;
 mod layer_filter_store;
@@ -66,11 +65,7 @@ mod layer_walk;
 mod layer_walk_tests;
 mod layers;
 mod measurement;
-mod model_ops;
 mod mtext_editor;
-mod table_cell_edit;
-#[cfg(test)]
-mod table_inplace_tests;
 #[cfg(test)]
 mod mtext_follows_style_tests;
 #[cfg(test)]
@@ -78,44 +73,43 @@ mod mtext_style_from_selection_tests;
 mod navigation;
 #[cfg(test)]
 mod object_isolation_tests;
-pub(crate) mod node_graph;
 mod options_session;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod plugin_host;
-mod presspull_ops;
-mod drawing_properties;
-mod purge_dialog;
-mod rename_dialog;
 mod properties;
-mod quick_calc;
+mod purge_dialog;
 #[cfg(test)]
 mod qselect_tests;
+mod quick_calc;
 mod recent;
-mod record_api;
+mod record_compare;
+mod rename_dialog;
 mod saved_filters;
 pub(crate) mod settings;
-pub(crate) mod tool_windows;
 mod shortcuts;
 mod startup;
 pub(crate) mod style_ops;
+mod tab_document;
+mod table_cell_edit;
+#[cfg(test)]
+mod table_inplace_tests;
 mod text_inline;
-mod text_style_draft;
-pub(crate) mod text_style_users;
 #[cfg(test)]
 mod text_style_data_tests;
+mod text_style_draft;
 #[cfg(test)]
 mod text_style_font_picker_tests;
 #[cfg(test)]
+mod text_style_layout_tests;
+#[cfg(test)]
 mod text_style_manager_tests;
 #[cfg(test)]
-mod text_style_update_tests;
-#[cfg(test)]
-mod text_style_layout_tests;
+mod text_style_pending_tests;
 #[cfg(test)]
 mod text_style_ui_tests;
 #[cfg(test)]
-mod text_style_pending_tests;
+mod text_style_update_tests;
+pub(crate) mod text_style_users;
 mod tolerance_dialog;
+pub(crate) mod tool_windows;
 mod update;
 pub(crate) use update::style_import::{style_exists as style_import_exists, StyleImportDraft};
 #[cfg(test)]
@@ -685,17 +679,6 @@ struct AddSelectedRestore {
     ribbon_lineweight: LineWeight,
 }
 
-/// Which Start-page section a narrow (tabbed) Start page is showing.
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, serde::Serialize, serde::Deserialize)]
-pub enum StartSection {
-    Recent,
-    Videos,
-    #[default]
-    Welcome,
-    Discussions,
-    Supporters,
-}
-
 /// How the Start page lists recent files.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RecentView {
@@ -776,21 +759,6 @@ pub(super) struct OpenCADStudio {
     recent_limit_input: String,
     recent_view: RecentView,
     command_line: CommandLine,
-    /// Recent Patreon supporters shown on the Start page (name, USD cents),
-    /// fetched once at boot, highest payment first.
-    patrons: Vec<(String, i64)>,
-    /// Tutorial-playlist videos for the Start page: seeded from the on-disk
-    /// cache at boot, refreshed by a live playlist fetch.
-    videos: Vec<crate::videos::VideoEntry>,
-    /// Decoded thumbnail handles keyed by video id — built once per video when
-    /// the list arrives, so the view never re-decodes JPEG bytes per frame.
-    video_thumbs: std::collections::HashMap<String, iced::widget::image::Handle>,
-    /// True while the boot-time playlist fetch is still in flight.
-    videos_loading: bool,
-    /// GitHub Discussions shown on the Start page, with pinned entries first.
-    discussions: Vec<crate::discussions::DiscussionEntry>,
-    /// True while the boot-time Discussions refresh is still in flight.
-    discussions_loading: bool,
     /// Collapsed Properties-panel section titles. This belongs to the app,
     /// rather than an individual document tab, so the same view preference is
     /// used by every currently open drawing/project.
@@ -800,9 +768,6 @@ pub(super) struct OpenCADStudio {
     layer_filters: Vec<layer_filters::LayerFilter>,
     /// The ribbon's layer list follows the Layer manager's node (LM-25).
     ribbon_layers_follow_filter: bool,
-    /// Which Start-page section is shown when the page is too narrow for all
-    /// three side by side and falls back to a tab bar.
-    start_section: StartSection,
     /// Widest natural single-row width of the Start-page action buttons,
     /// measured by `WrapFlow` so side lists collapse before those buttons wrap.
     start_action_w: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -941,7 +906,10 @@ pub(super) struct OpenCADStudio {
     table_cell_format: Option<crate::ui::window::table_cell_dialog::CellFormatState>,
     /// A data format waiting on the invalid data type warning, and the
     /// cells whose values read as no such type.
-    table_cell_warning: Option<(crate::ui::window::table_cell_dialog::CellFormatState, Vec<String>)>,
+    table_cell_warning: Option<(
+        crate::ui::window::table_cell_dialog::CellFormatState,
+        Vec<String>,
+    )>,
     /// A value typed into a cell that waits on the data type question.
     table_cell_entry: Option<commands::table_cells::CellEntry>,
     /// The next cell step puts its value in without the data type question
@@ -954,8 +922,6 @@ pub(super) struct OpenCADStudio {
     underlay_layers: Option<crate::ui::window::pdf_dialogs::UnderlayLayersState>,
     pdf_import_settings: Option<crate::modules::insert::pdf_import::PdfImportSettings>,
     pdf_import_file: Option<crate::ui::window::pdf_dialogs::PdfImportFileState>,
-    /// IMPORT and DGNIMPORT windows.
-    import_dialogs: crate::ui::window::import_dialogs::ImportDialogs,
     /// The dialog Options was opened from; it comes back when Options closes.
     options_parent: Option<ModalKind>,
     /// A dialog opened from Options; Options comes back when it closes.
@@ -1258,15 +1224,6 @@ pub(super) struct OpenCADStudio {
     pub dim_constraint_last: &'static str,
     /// The geometric constraint GEOMCONSTRAINT offers by default: the last one used.
     pub geom_constraint_last: &'static str,
-    /// Set while a plugin drives the command line (`HostApi::execute_command`).
-    /// Dispatching a plugin command from there would call back into the plugin
-    /// that is still blocked waiting for this request, so plugin dispatch is
-    /// skipped for the length of the call.
-    pub(crate) suppress_plugin_dispatch: bool,
-    /// Set while a plugin request drives commands (`run_command`,
-    /// `constraint_create`): their edits join the plugin's open `push_undo`
-    /// scope, which the message boundary after the request closes.
-    pub(crate) plugin_request_active: bool,
     pub constraint_bar_mode: i16,
     /// Minutes between autosaves to a `.sv$` recovery file (SAVETIME command);
     /// 0 disables autosave.
@@ -1366,46 +1323,6 @@ pub(super) struct OpenCADStudio {
     /// drifts away. The instant lets `ViewportMove` detect when the
     /// dwell crosses the popup-open threshold.
     grip_hover: Option<GripHover>,
-    /// Plugin-declared custom grip the cursor hovers (API v11); drives the
-    /// same hover highlight overlay the built-in grip hover uses.
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_hover: Option<crate::plugin::grip_points::PluginGripHover>,
-    /// Delivery bookkeeping for the active custom-grip drag (API v12):
-    /// every out-of-process phase is issued without waiting and collected
-    /// at pump ticks — the UI loop never blocks on plugin answers.
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_deliveries: crate::plugin::grip_points::PluginGripDeliveries,
-    /// The visual-only live-geometry phase of the active custom-grip drag
-    /// (API v12): stashed originals of the entities the plugin's move
-    /// answers are swapping in; restored byte-identically before the settle
-    /// (and on cancel), never a history step of their own.
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_live_originals: Vec<(document::Handle, document::EntityType)>,
-    /// The descriptor-backed grip drag's host state (API v14, additive):
-    /// Some while a drag re-derives its Begin answer's live design per
-    /// coalesced cursor move. Data-only; the machinery lives in the
-    /// native-only drag lifecycle (`update/plugin_grips.rs`). Configured
-    /// out on wasm together with the machinery: the type names the host
-    /// module's wire types, which the wasm build does not compile.
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_descriptor_drag: Option<crate::plugin::grip_points::DescriptorGripDrag>,
-    /// The grip-settle watchdog floor: [`SETTLE_WATCHDOG`] in production;
-    /// tests lower it to exercise the strike ledger with millisecond
-    /// budgets instead of real seconds.
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_settle_watchdog: std::time::Duration,
-    /// The grip-settle strike ledger: plugin -> the missed-delivery times.
-    /// Three misses inside the strike window tear the connection down (the
-    /// plugin is genuinely wedged under a live pump); a settle landing in
-    /// time clears the entry (one recovered settle resets the count).
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_grip_settle_strikes: rustc_hash::FxHashMap<String, Vec<std::time::Instant>>,
-    /// Grip-declaration re-arms queued by strike tear-downs: the reap tick
-    /// re-dispatches `SelectionChanged` (dedup cleared) once the plugin is
-    /// visible again, so its declared grips come back without human
-    /// intervention.
-    #[cfg(not(target_arch = "wasm32"))]
-    pending_plugin_grips_rearm: std::collections::BTreeSet<String>,
     /// Open multi-functional grip popup. Persists across mouse moves
     /// until dismissed (click outside, ESC, cursor leaves the grip).
     grip_popup: Option<GripPopup>,
@@ -1518,13 +1435,8 @@ pub(super) struct OpenCADStudio {
     show_authoring_palettes: bool,
     show_parameters_manager: bool,
     authoring_palette_tab: crate::ui::window::authoring_palettes::Tab,
-    /// Node graph overlay over the viewport.
-    pub(crate) show_node_graph: bool,
-    /// Entity the Properties handlers act on instead of the selection, set
-    /// only for the duration of a node-graph property write.
+    /// Entity explicitly targeted by the current property operation.
     pub(crate) property_target_override: Option<document::Handle>,
-    /// A node-graph evaluation is recording; its writes join that one undo step.
-    pub(crate) graph_undo_open: bool,
     /// Docked External References panel visibility (EXTERNALREFERENCES).
     pub(crate) show_external_references: bool,
     /// Whether the Browser panel is shown. Off until BROWSER opens it, so
@@ -1687,13 +1599,6 @@ pub(super) struct OpenCADStudio {
     /// The open in-canvas modal dialog, if any (Plan B: shared overlay instead
     /// of OS windows).
     active_modal: Option<ModalKind>,
-    /// State backing an active declarative plugin modal dialog.
-    pub(crate) plugin_dialog_state: Option<crate::ui::window::plugin_dialog::PluginDialogState>,
-    /// Persistent dockable side panels registered by plugins.
-    pub(crate) plugin_panels: std::collections::BTreeMap<String, crate::ui::window::plugin_panel::PluginPanelState>,
-    /// Numeric mapping for PanelId::Plugin(u32).
-    pub(crate) plugin_panel_ids: std::collections::HashMap<String, u32>,
-    pub(crate) plugin_panel_by_num: std::collections::HashMap<u32, String>,
     /// Selection and staged values owned by the Properties hyperlink dialog.
     hyperlink_editor_handles: Vec<document::Handle>,
     hyperlink_editor_block: Option<(u64, document::Handle)>,
@@ -1766,57 +1671,6 @@ pub(super) struct OpenCADStudio {
     attr_editor_tab: crate::ui::window::attribute_editor::AttrTab,
     /// Highlighted attribute row driving the Text Options / Properties tabs.
     attr_editor_selected: usize,
-    /// Plugin ids the user turned off in the Plugin Manager. Disabled plugins
-    /// keep their manifest listed but drop their ribbon tab and command
-    /// dispatch. Persisted via [`settings::UserSettings::disabled_plugins`].
-    disabled_plugins: rustc_hash::FxHashSet<String>,
-    /// `(tab id, selection fingerprint)` last broadcast to V4 plugins, so
-    /// `SelectionChangedV4` fires once per real change rather than per message.
-    #[cfg(not(target_arch = "wasm32"))]
-    last_plugin_selection: Option<(u64, u64)>,
-    /// `(tab id, geometry epoch)` last published to the V4 document view.
-    /// Built-in edits bypass HostSession, so this is checked at message
-    /// boundaries as well as after plugin-initiated writes.
-    #[cfg(not(target_arch = "wasm32"))]
-    last_plugin_document: Option<(u64, u64)>,
-    /// External add-on packages found in the plugins folder, refreshed when the
-    /// Plugin Manager opens.
-    external_plugins: Vec<crate::plugin::external::ExternalPlugin>,
-    /// Ids of external packages actually loaded this session (a subset of
-    /// `external_plugins` — compatible, with a library, dlopen'd at startup).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    loaded_plugin_ids: rustc_hash::FxHashSet<String>,
-    /// Startup load failures keyed by plugin id. The Plugin Manager uses these
-    /// to distinguish an installed-but-failed package from one awaiting restart.
-    plugin_load_errors: rustc_hash::FxHashMap<String, String>,
-    /// Curated plugin registry fetched from the OpenCADStudio repo.
-    plugin_registry: Vec<crate::plugin::external::RegistryEntry>,
-    /// True while the curated registry request is in flight.
-    plugin_registry_loading: bool,
-    /// Last curated-registry request error. Kept separate from general
-    /// marketplace status so the UI can show a friendly retry card and retain
-    /// copyable technical details.
-    plugin_registry_error: Option<String>,
-    /// Whether the registry error card exposes its raw diagnostic text.
-    plugin_registry_error_details_open: bool,
-    /// User-linked plugin source repos (`owner/repo`) beyond the curated list.
-    plugin_repos: Vec<String>,
-    /// Add-repository text field in the Plugin Manager.
-    plugin_repo_input: String,
-    /// Live filter for installed and available plugin cards.
-    plugin_search_input: String,
-    /// Installable release tags fetched per linked repo (for the dropdown).
-    repo_release_tags: rustc_hash::FxHashMap<String, Vec<crate::plugin::external::ReleaseInfo>>,
-    /// The release tag currently selected per linked repo.
-    repo_selected_tag: rustc_hash::FxHashMap<String, String>,
-    /// Repository currently shown in the Plugin Manager detail pane.
-    selected_plugin_repo: Option<String>,
-    /// Parsed GitHub README content or the last fetch error, cached per repo.
-    plugin_readmes: rustc_hash::FxHashMap<String, Result<iced::widget::markdown::Content, String>>,
-    /// README requests in flight, used to render a deterministic loading state.
-    plugin_readme_loading: rustc_hash::FxHashSet<String>,
-    /// Last marketplace status / error line shown in the Plugin Manager.
-    marketplace_status: String,
     /// PDSIZE text buffer for the Point Style (DDPTYPE) dialog.
     point_size_buf: String,
     /// Tab that owns the staged Point Style edits, so OK cannot write to a
@@ -1842,17 +1696,9 @@ pub(super) struct OpenCADStudio {
     start_templates: Option<Vec<std::path::PathBuf>>,
     /// Editable copy of `font_source_url` shown in the missing-fonts prompt.
     font_source_input: String,
-    donation_prompt_version: String,
     /// Read-only session (`--read-only`): editing is allowed but every save
     /// path is refused. Set once at boot from the CLI config.
     read_only: bool,
-    /// Tag of the latest available release (without the leading "v"),
-    /// e.g. `"0.3.0"`. `None` when up-to-date or check hasn't returned.
-    update_notice_version: Option<String>,
-    /// Release-notes body for the version above (GitHub release "body"
-    /// markdown, as returned by the API). May be empty when the release
-    /// shipped without notes.
-    update_notice_body: Option<String>,
     /// In-memory clipboard: cloned entities waiting to be pasted.
     clipboard: Vec<document::EntityType>,
     /// Entities removed by the most recent ERASE, kept so OOPS can restore them.
@@ -2633,22 +2479,16 @@ mod dim_style_refs_serde {
     use rustc_hash::FxHashMap;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(
-        map: &FxHashMap<Handle, String>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &FxHashMap<Handle, String>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut pairs: Vec<(Handle, String)> =
-            map.iter().map(|(k, v)| (*k, v.clone())).collect();
+        let mut pairs: Vec<(Handle, String)> = map.iter().map(|(k, v)| (*k, v.clone())).collect();
         pairs.sort_by_key(|(h, _)| h.value());
         pairs.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<FxHashMap<Handle, String>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<FxHashMap<Handle, String>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -2839,7 +2679,8 @@ impl ClipboardDeps {
                 if !objects.is_empty() {
                     let mut annotation_scales = Vec::new();
                     for (_, object) in &objects {
-                        let document::objects::ObjectType::ObjectContextData(context) = object else {
+                        let document::objects::ObjectType::ObjectContextData(context) = object
+                        else {
                             continue;
                         };
                         if annotation_scales
@@ -3059,7 +2900,10 @@ impl ClipboardDeps {
     /// Snapshot every block definition the `entities` reference through an
     /// INSERT, walking nested INSERTs transitively. Model/paper space and
     /// xref blocks are skipped — those aren't portable definitions.
-    fn capture_blocks(doc: &document::Document, entities: &[document::EntityType]) -> Vec<BlockDef> {
+    fn capture_blocks(
+        doc: &document::Document,
+        entities: &[document::EntityType],
+    ) -> Vec<BlockDef> {
         use document::EntityType;
         use rustc_hash::FxHashSet;
         let mut seen: FxHashSet<String> = FxHashSet::default();
@@ -3237,9 +3081,6 @@ pub enum ContextMenuEditMsg {
 pub enum ModalKind {
     About,
     Shortcuts,
-    PluginManager,
-    UpdateNotice,
-    DonationPrompt,
     LayerStateManager,
     LayerTranslator,
     DrawingUnits,
@@ -3350,16 +3191,6 @@ pub enum ModalKind {
     XrefHelp,
     /// Sheet set wizard, properties and sheet / subset forms.
     SheetSet,
-    /// IMPORT's Import File window.
-    ImportFile,
-    /// DGNIMPORT's DGN Import window.
-    DgnImport,
-    /// IMPORT's 3D Studio Import window.
-    TdsImport,
-    /// A 3D Studio import set to ask: one mesh with several materials.
-    TdsMaterial,
-    /// A texture map a 3D Studio import did not find, one window per map.
-    TdsMissingMap,
     HatchBoundaryWarning,
     /// An extraction table outdated at open/save/plot/publish.
     ExtractionOutdated,
@@ -3368,8 +3199,6 @@ pub enum ModalKind {
     /// `RecoveryPrompt` — nothing is wrong with the drawing itself.
     #[cfg(target_arch = "wasm32")]
     AutosaveRestore,
-    /// Declarative modal dialog opened by a plugin.
-    PluginDialog,
 }
 
 /// A property group controlled by a layer state's restore mask.
@@ -3519,18 +3348,7 @@ pub enum Message {
         redrew: bool,
     },
     ControlToggle,
-    /// Node graph overlay interaction.
-    Graph(crate::ui::node_graph::GraphMsg),
     Tick(Instant),
-    /// Periodic drain of plugin-to-host requests that arrived outside a host
-    /// call (e.g. mutations from the Python REPL).
-    #[cfg(not(target_arch = "wasm32"))]
-    DrainPluginRequests,
-    /// A pump tick for the active custom-grip drag (API v11): collects at
-    /// most one outstanding move answer, sends the newest parked point when
-    /// the channel is free, and reschedules itself while the drag lives.
-    #[cfg(not(target_arch = "wasm32"))]
-    PluginGripPump,
     /// Web: periodic check for per-script fonts a drawing needs but hasn't
     /// fetched yet (#141). Native: never emitted.
     PollWebFonts,
@@ -3624,7 +3442,6 @@ pub enum Message {
     /// Open a URL in the system browser (start-page intro video, links).
     OpenUrl(String),
     /// Select which section a narrow (tabbed) Start page shows.
-    StartSectionSelect(StartSection),
     /// Scroll the status-bar layout-tab strip horizontally by `delta` px
     /// (negative = left). Driven by the ‹ › arrows next to the tabs.
     ScrollLayoutTabs(f32),
@@ -3644,10 +3461,7 @@ pub enum Message {
     WebFileCached(u64, crate::io::WebOpenOutcome, Result<(), String>),
     FileOpened(
         u64,
-        Result<
-            (String, PathBuf, Document, crate::scene::DerivedCaches),
-            crate::io::OpenLoadError,
-        >,
+        Result<(String, PathBuf, Document, crate::scene::DerivedCaches), crate::io::OpenLoadError>,
     ),
     RecoveryClose,
     RecoveryAttempt,
@@ -3978,48 +3792,6 @@ pub enum Message {
         tool_id: String,
         event: ModuleEvent,
     },
-    /// Result of a plugin-requested file picker (`ModuleEvent::PluginFileDialog`).
-    /// `path` is `None` when the user cancels. On `Some`, the host dispatches
-    /// `"<command> <path>"` to the plugins with original case preserved.
-    PluginFileDialogResult {
-        command: String,
-        path: Option<std::path::PathBuf>,
-    },
-    /// Live text change in a plugin modal dialog control.
-    PluginDialogTextChange(String, String),
-    /// Checkbox toggle in a plugin modal dialog control.
-    PluginDialogBoolToggle(String, bool),
-    /// Dropdown choice selection in a plugin modal dialog control.
-    PluginDialogChoiceSelect(String, usize),
-    /// Color selection change in a plugin modal dialog control.
-    PluginDialogColorChange(String, [u8; 3]),
-    /// User clicked Browse on a file picker control in a plugin modal dialog.
-    PluginDialogFilePick(String),
-    /// File chosen from OS dialog for a file picker control.
-    PluginDialogFilePicked(String, Option<std::path::PathBuf>),
-    /// Table cell text change in a plugin modal dialog.
-    PluginDialogTableCellChange(String, usize, usize, String),
-    /// Add empty row to a table in a plugin modal dialog.
-    PluginDialogTableAddRow(String),
-    /// Remove a row from a table in a plugin modal dialog.
-    PluginDialogTableRemoveRow(String, usize),
-    /// Collapse / expand toggle for a property fields section.
-    PluginDialogSectionToggle(String),
-    /// Submit / OK clicked in a plugin modal dialog.
-    PluginDialogSubmit,
-    /// Cancel clicked in a plugin modal dialog.
-    PluginDialogCancel,
-    // ── Plugin dock panels ─────────────────────────────────────────────────
-    PluginPanelButtonClick(String, String, Option<String>),
-    PluginPanelTextChange(String, String, String),
-    PluginPanelBoolToggle(String, String, bool),
-    PluginPanelChoiceSelect(String, String, usize, String),
-    PluginPanelFilePick(String, String),
-    PluginPanelFilePicked(String, String, Option<std::path::PathBuf>),
-    PluginPanelTableCellChange(String, String, usize, usize, String),
-    PluginPanelTableAddRow(String, String),
-    PluginPanelTableRemoveRow(String, String, usize),
-    PluginPanelSectionToggle(String, String),
     // ── Document tabs ──────────────────────────────────────────────────────
     /// Create a new empty document tab.
     TabNew,
@@ -5002,15 +4774,27 @@ pub enum Message {
     },
     /// User committed a geometry/common field edit (Enter pressed).
     PropGeomCommit(&'static str),
-    PropBlockInput { key: crate::scene::model::object::BlockParameterKey, value: String },
+    PropBlockInput {
+        key: crate::scene::model::object::BlockParameterKey,
+        value: String,
+    },
     PropBlockCommit(crate::scene::model::object::BlockParameterKey),
-    PropBlockChoice { key: crate::scene::model::object::BlockParameterKey, index: usize },
+    PropBlockChoice {
+        key: crate::scene::model::object::BlockParameterKey,
+        index: usize,
+    },
     /// Open or close the dynamic-value list of one row. It carries the surface
     /// it was clicked on, so the same row's two copies toggle independently.
-    PropBlockPickerToggle { key: crate::scene::model::object::BlockParameterKey, quick: bool },
+    PropBlockPickerToggle {
+        key: crate::scene::model::object::BlockParameterKey,
+        quick: bool,
+    },
     /// The list's overlay dismissed itself: a click outside it, or the same
     /// Escape whose global shortcut arrives a moment later.
-    PropBlockPickerDismiss { key: crate::scene::model::object::BlockParameterKey, quick: bool },
+    PropBlockPickerDismiss {
+        key: crate::scene::model::object::BlockParameterKey,
+        quick: bool,
+    },
 
     /// Toggle a collapsed coordinate group ("Position", "Scale", …) open or
     /// closed in the Properties panel, keyed `section:base`.
@@ -5027,14 +4811,6 @@ pub enum Message {
     },
     /// User committed a block-attribute value edit (Enter pressed).
     PropAttrCommit(String),
-    /// User is typing in a plugin class parameter value field (API v14,
-    /// live buffer update), keyed by the declared parameter name.
-    PropPluginParamInput {
-        name: String,
-        value: String,
-    },
-    /// User committed a plugin class parameter value edit (Enter pressed).
-    PropPluginParamCommit(String),
     /// Reports the currently keyboard-focused widget (if any) after a
     /// [`sync_active_field_task`](crate::ui::properties::sync_active_field_task)
     /// sweep, so the update handler can keep the active-row marker reconciled
@@ -5302,56 +5078,8 @@ pub enum Message {
     /// Title-bar released: stop dragging.
     ModalDragRelease,
     AboutCopyInfo,
-    // ── Plugin Manager window ───────────────────────────────────────────
-    PluginManagerOpen,
-    #[allow(dead_code)]
-    PluginManagerClose,
-    /// Enable (`true`) or disable (`false`) the plugin with this id.
-    SetPluginEnabled(String, bool),
-    // ── Plugin marketplace (install from a linked repo's releases) ─────────
-    /// Edit the add-repository text field.
-    PluginRepoInput(String),
-    /// Filter installed and available plugin cards.
-    PluginSearchInput(String),
-    /// Link the repository currently in the text field.
-    PluginRepoAdd,
-    /// Unlink a repository.
-    PluginRepoRemove(String),
-    /// The curated registry was fetched.
-    PluginRegistryFetched(Result<Vec<crate::plugin::external::RegistryEntry>, String>),
-    /// Retry the curated registry request after a connection failure.
-    PluginRegistryRetry,
-    /// Expand or collapse raw registry error details.
-    PluginRegistryErrorDetailsToggle,
-    /// Copy registry URL, platform, version, and raw error details.
-    PluginRegistryCopyDiagnostics,
-    /// Patreon supporters fetched at boot for the Start page (name, USD cents).
-    PatronsFetched(Result<Vec<(String, i64)>, String>),
-    /// Tutorial-playlist videos fetched at boot for the Start page.
-    VideosFetched(Result<Vec<crate::videos::VideoEntry>, String>),
-    /// GitHub Discussions fetched at boot for the Start page.
-    DiscussionsFetched(Result<Vec<crate::discussions::DiscussionEntry>, String>),
     /// Recent-file DWG preview thumbnails decoded on a background thread.
     RecentThumbsLoaded(Vec<(std::path::PathBuf, Option<iced::widget::image::Handle>)>),
-    /// Installable releases and manifest API versions fetched for `owner/repo`.
-    PluginReleasesFetched(
-        String,
-        Result<Vec<crate::plugin::external::ReleaseInfo>, String>,
-    ),
-    /// Choose a release tag for a repo (`repo`, `tag`).
-    PluginReleaseSelect(String, String),
-    /// Select a plugin source and show its GitHub README in the detail pane.
-    PluginReadmeSelect(String),
-    /// A GitHub README fetch finished (`repo`, Markdown or error).
-    PluginReadmeFetched(String, Result<String, String>),
-    /// Install the selected release of `owner/repo`.
-    PluginInstall(String),
-    /// Install a specific newer release from an installed plugin card.
-    PluginUpdate(String, String),
-    /// Result of an install: the plugin id, or an error message.
-    PluginInstalled(Result<String, String>),
-    /// Delete an installed plugin's folder (effective next restart).
-    PluginUninstall(String),
     // ── Point Style (DDPTYPE) dialog ──────────────────────────────────────
     /// Set the full PDMODE value from a glyph-grid cell.
     PointStyleSetMode(i16),
@@ -5606,18 +5334,9 @@ pub enum Message {
     OsWindowScale(window::Id, f32),
     /// Suppress menu-root tooltips between clicking the root and leaving it.
     StatusMenuTooltipHidden(bool),
-    /// GitHub releases API returned a result. `Some(version)` means a
-    /// newer release exists; we open the update-notice window.
-    UpdateCheckResult(Option<crate::io::update_check::UpdateInfo>),
-    /// CHECKFORUPDATES' answer: shown at once, and reported when there is
-    /// nothing newer.
-    UpdateCheckManual(Option<crate::io::update_check::UpdateInfo>),
     /// The process was asked to stop (SIGTERM).
     #[cfg(not(target_arch = "wasm32"))]
     Terminate,
-    /// User dismissed the update-notice window.
-    UpdateNoticeClose,
-    DonationPromptDonate,
     /// First-launch default-association prompt: user accepted — register this
     /// app as the default handler for .dwg / .dxf.
     AssocPromptYes,
@@ -5625,9 +5344,6 @@ pub enum Message {
     AssocPromptNo,
     /// Result of the platform default-association call.
     AssocResult(Result<String, String>),
-    /// User clicked the "Open release page" button — opens the GitHub
-    /// release URL in the OS default browser and closes the notice.
-    UpdateNoticeOpenRelease,
     // ── Plot / Export ─────────────────────────────────────────────────────
     /// Show the SVG save-file dialog and trigger export.
     PlotExport,
@@ -6063,38 +5779,6 @@ pub enum Message {
     DataExtractionSave(String),
     /// Path chosen (or None = cancelled).
     DataExtractionSaveResult(String, Option<std::path::PathBuf>),
-    // ── STL export ────────────────────────────────────────────────────────
-    /// Trigger STL export: collect meshes and show save dialog.
-    StlExport,
-    /// Callback after the user picks (or cancels) the STL save path.
-    StlExportPath(Option<std::path::PathBuf>),
-    StlExportFinished(std::path::PathBuf, Result<(), String>),
-    // ── STEP export ───────────────────────────────────────────────────────
-    /// Trigger STEP AP214 export: show save dialog.
-    StepExport,
-    /// Callback after the user picks (or cancels) the STEP save path.
-    StepExportPath(Option<std::path::PathBuf>),
-    StepExportFinished(std::path::PathBuf, Result<(), String>),
-    // ── FBX export ────────────────────────────────────────────────────────
-    /// Trigger FBX export: show save dialog.
-    FbxExport,
-    /// Callback after the user picks (or cancels) the FBX save path.
-    FbxExportPath(Option<std::path::PathBuf>),
-    FbxExportFinished(std::path::PathBuf, Result<(), String>),
-    // ── OBJ import ────────────────────────────────────────────────────────
-    /// Trigger OBJ import: show open-file dialog.
-    ObjImport,
-    /// Callback after the user picks (or cancels) the OBJ file path.
-    /// Web never constructs it — the browser handle's bytes are read directly.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    ObjImportPath(Option<std::path::PathBuf>),
-    ObjImportFinished(
-        u64,
-        std::path::PathBuf,
-        Result<crate::scene::model::mesh_model::MeshModel, String>,
-    ),
-    /// An edit in the Import File or DGN Import window.
-    ImportDialog(crate::ui::window::import_dialogs::ImportDialogMsg),
 }
 
 #[derive(Debug, Clone)]
@@ -6107,23 +5791,6 @@ pub enum SystemClipboardText {
 }
 
 impl OpenCADStudio {
-    /// Install the Start-page video list, decoding each thumbnail's JPEG into
-    /// an image Handle exactly once (a fresh Handle per view frame would
-    /// re-upload the texture every frame).
-    fn set_videos(&mut self, videos: Vec<crate::videos::VideoEntry>) {
-        if videos.is_empty() {
-            return;
-        }
-        self.video_thumbs = videos
-            .iter()
-            .filter_map(|v| {
-                let bytes = v.thumb.clone()?;
-                Some((v.id.clone(), iced::widget::image::Handle::from_bytes(bytes)))
-            })
-            .collect();
-        self.videos = videos;
-    }
-
     pub(crate) fn new() -> Self {
         crate::sys::startup_times::mark("App::new: begin");
         let config = config::AppConfig::load();
@@ -6150,16 +5817,9 @@ impl OpenCADStudio {
             recent_limit_input: recent::RECENT_DEFAULT.to_string(),
             recent_view: RecentView::default(),
             command_line: CommandLine::new(),
-            patrons: Vec::new(),
-            videos: Vec::new(),
-            video_thumbs: std::collections::HashMap::new(),
-            videos_loading: false,
-            discussions: Vec::new(),
-            discussions_loading: false,
             collapsed_property_sections: rustc_hash::FxHashSet::default(),
             layer_filters: Vec::new(),
             ribbon_layers_follow_filter: false,
-            start_section: StartSection::default(),
             start_action_w: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
             history_content: iced::widget::text_editor::Content::new(),
             command_history_resizing: false,
@@ -6251,7 +5911,6 @@ impl OpenCADStudio {
             underlay_layers: None,
             pdf_import_settings: None,
             pdf_import_file: None,
-            import_dialogs: Default::default(),
             options_parent: None,
             options_child: None,
             xref_attach: None,
@@ -6387,8 +6046,6 @@ impl OpenCADStudio {
             constraint_form_annotational: false,
             dim_constraint_last: "Aligned",
             geom_constraint_last: "Coincident",
-            suppress_plugin_dispatch: false,
-            plugin_request_active: false,
             constraint_bar_mode: 4095,
             savetime_min: 10,
             save_file_path: String::new(),
@@ -6426,20 +6083,6 @@ impl OpenCADStudio {
             dyn_user_reshaped: false,
             dyn_coord_absolute: false,
             grip_hover: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_hover: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_deliveries: Default::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_live_originals: Vec::new(),
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_descriptor_drag: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_settle_watchdog: crate::app::update::SETTLE_WATCHDOG,
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grip_settle_strikes: Default::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            pending_plugin_grips_rearm: Default::default(),
             grip_popup: None,
             grip_pending: None,
             visibility_popup: None,
@@ -6481,9 +6124,7 @@ impl OpenCADStudio {
             show_authoring_palettes: false,
             show_parameters_manager: false,
             authoring_palette_tab: Default::default(),
-            show_node_graph: false,
             property_target_override: None,
-            graph_undo_open: false,
             show_external_references: false,
             show_browser: false,
             pc_manager: Default::default(),
@@ -6552,10 +6193,6 @@ impl OpenCADStudio {
             color_books: Default::default(),
             color_books_read: false,
             active_modal: None,
-            plugin_dialog_state: None,
-            plugin_panels: std::collections::BTreeMap::new(),
-            plugin_panel_ids: std::collections::HashMap::new(),
-            plugin_panel_by_num: std::collections::HashMap::new(),
             hyperlink_editor_handles: Vec::new(),
             hyperlink_editor_block: None,
             hyperlink_editor_url: String::new(),
@@ -6589,27 +6226,6 @@ impl OpenCADStudio {
             attr_editor_rows: Vec::new(),
             attr_editor_tab: crate::ui::window::attribute_editor::AttrTab::Attribute,
             attr_editor_selected: 0,
-            disabled_plugins: rustc_hash::FxHashSet::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            last_plugin_selection: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            last_plugin_document: None,
-            external_plugins: Vec::new(),
-            loaded_plugin_ids: rustc_hash::FxHashSet::default(),
-            plugin_load_errors: rustc_hash::FxHashMap::default(),
-            plugin_registry: Vec::new(),
-            plugin_registry_loading: false,
-            plugin_registry_error: None,
-            plugin_registry_error_details_open: false,
-            plugin_repos: Vec::new(),
-            plugin_repo_input: String::new(),
-            plugin_search_input: String::new(),
-            repo_release_tags: rustc_hash::FxHashMap::default(),
-            repo_selected_tag: rustc_hash::FxHashMap::default(),
-            selected_plugin_repo: None,
-            plugin_readmes: rustc_hash::FxHashMap::default(),
-            plugin_readme_loading: rustc_hash::FxHashSet::default(),
-            marketplace_status: String::new(),
             point_size_buf: String::new(),
             point_style_tab_id: None,
             point_mode_buf: None,
@@ -6620,10 +6236,7 @@ impl OpenCADStudio {
             qnew_template: String::new(),
             start_templates: None,
             font_source_input: String::new(),
-            donation_prompt_version: String::new(),
             read_only: false,
-            update_notice_version: None,
-            update_notice_body: None,
             clipboard: Vec::new(),
             oops_cache: Vec::new(),
             clipboard_base: glam::DVec3::ZERO,
@@ -6920,22 +6533,6 @@ impl OpenCADStudio {
         app.command_aliases = alias::load_aliases();
         app.command_line.command_aliases = app.command_aliases.clone();
         crate::sys::startup_times::mark("App::new: aliases loaded");
-        // Load external plugin packages from the plugins folder once, then fold
-        // their ribbon tabs into the ribbon. Skipped under test/wasm.
-        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
-        {
-            crate::sys::startup_times::mark("App::new: loading external plugins");
-            for (id, res) in crate::plugin::external::load_at_startup(&mut app) {
-                if let Err(e) = res {
-                    app.command_line
-                        .push_error(crate::tf!("Plugin '{id}' failed to load: {e}").as_ref());
-                    app.plugin_load_errors.insert(id, e);
-                }
-            }
-            crate::sys::startup_times::mark("App::new: external plugins loaded");
-            app.loaded_plugin_ids = crate::plugin::external::loaded_ids().into_iter().collect();
-            app.rebuild_ribbon_modules();
-        }
         crate::sys::startup_times::mark("App::new: done");
         app.last_saved_config = Some(app.current_config());
         app.sync_ribbon_layers();
@@ -6967,32 +6564,15 @@ impl OpenCADStudio {
         id
     }
 
-    /// Open a declarative plugin modal dialog.
-    pub(crate) fn open_plugin_dialog(&mut self, def: ocs_plugin_api::dialog::DialogDef) {
-        self.plugin_dialog_state = Some(crate::ui::window::plugin_dialog::PluginDialogState::new(def));
-        self.active_modal = Some(ModalKind::PluginDialog);
-    }
-
-    /// Install `cmd` as the active interactive command for tab `tab`.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn set_active_command(
         &mut self,
         tab: usize,
         cmd: Box<dyn crate::command::CadCommand>,
     ) {
-        let dialog = cmd.modal_dialog();
         if let Some(t) = self.tabs.get_mut(tab) {
             t.active_cmd = Some(cmd);
         }
-        if let Some(dialog_def) = dialog {
-            self.open_plugin_dialog(dialog_def);
-        }
-    }
-
-    /// Push an error message from the plugin runtime to the command line.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(crate) fn push_plugin_error(&mut self, msg: &str) {
-        self.command_line.push_error(msg);
     }
 
     /// Boot function for `iced::daemon`: returns initial state plus a task that
@@ -7028,14 +6608,6 @@ impl OpenCADStudio {
         s.main_window = Some(id);
         tool_windows::set_main_window(id);
         let open_main = open_task.map(|_| Message::Noop);
-        let check_update = if crate::config::managed() {
-            Task::none()
-        } else {
-            Task::perform(
-                crate::io::update_check::check_for_update(),
-                Message::UpdateCheckResult,
-            )
-        };
         let focus_cmd = s.focus_cmd_input();
         // Startup configuration from the command line (see `cli`). File
         // arguments — also how the OS file association launches us when
@@ -7088,73 +6660,12 @@ impl OpenCADStudio {
         if !has_script {
             s.queue_startup_prompts();
         }
-        // Fetch the Patreon supporters list once at boot for the Start page.
-        #[cfg(not(target_arch = "wasm32"))]
-        let patrons_fetch = Task::perform(
-            async { crate::patreon::fetch_patrons() },
-            Message::PatronsFetched,
-        );
-        #[cfg(target_arch = "wasm32")]
-        let patrons_fetch = Task::none();
-        // Tutorial videos: show the on-disk cache instantly, refresh from the
-        // live playlist in the background. Nothing ships in the binary. The
-        // fetch runs on its own OS thread — its several sequential HTTP
-        // requests would otherwise sit on the async executor and hold up the
-        // rest of the boot tasks (the Start page waited on it).
-        #[cfg(not(target_arch = "wasm32"))]
-        let videos_fetch = {
-            s.set_videos(crate::videos::load_cached());
-            s.videos_loading = true;
-            let (tx, rx) = iced::futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(crate::videos::fetch_playlist());
-            });
-            Task::perform(
-                async move {
-                    rx.await
-                        .unwrap_or_else(|_| Err("video fetch thread died".into()))
-                },
-                Message::VideosFetched,
-            )
-        };
-        #[cfg(target_arch = "wasm32")]
-        let videos_fetch = Task::none();
-        // GitHub Discussions: seed from the last successful fetch, then refresh
-        // the public feed and pinned section on a background thread.
-        #[cfg(not(target_arch = "wasm32"))]
-        let discussions_fetch = {
-            s.discussions = crate::discussions::load_cached();
-            s.discussions_loading = true;
-            let (tx, rx) = iced::futures::channel::oneshot::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(crate::discussions::fetch_discussions());
-            });
-            Task::perform(
-                async move {
-                    rx.await
-                        .unwrap_or_else(|_| Err("discussion fetch thread died".into()))
-                },
-                Message::DiscussionsFetched,
-            )
-        };
-        #[cfg(target_arch = "wasm32")]
-        let discussions_fetch = Task::none();
         // Recent-file thumbnails: decoded off-thread — parsing every recent
         // DWG's preview on the boot path held the first frame back.
         let thumbs_fetch = s.refresh_recent_thumbs();
         (
             s,
-            Task::batch([
-                open_main,
-                check_update,
-                focus_cmd,
-                cli_open,
-                script,
-                patrons_fetch,
-                videos_fetch,
-                discussions_fetch,
-                thumbs_fetch,
-            ]),
+            Task::batch([open_main, focus_cmd, cli_open, script, thumbs_fetch]),
         )
     }
 
@@ -7165,17 +6676,6 @@ impl OpenCADStudio {
     fn boot_web() -> (Self, Task<Message>) {
         #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
         let mut s = Self::new();
-        // A web host that intends to automate can opt in before the first
-        // control request by setting `opencadstudio.automation` to "1" in
-        // localStorage (the same pre-load mechanism the settings use): the
-        // startup donation prompt then never queues (#1349).
-        if web_sys::window()
-            .and_then(|window| window.local_storage().ok().flatten())
-            .and_then(|storage| storage.get_item("opencadstudio.automation").ok().flatten())
-            == Some("1".to_string())
-        {
-            s.control.automation_seen = true;
-        }
         s.queue_startup_prompts();
         let focus = s.focus_cmd_input();
         let primary_font =
@@ -7184,16 +6684,6 @@ impl OpenCADStudio {
             Task::done(Message::PollWebFonts),
             Task::done(Message::ApplyWebFont(primary_font)),
         ]);
-        // Web can't reach the Patreon API directly (CORS); fetch the CI-built
-        // supporters.json served on the same origin instead.
-        let patrons = Task::perform(crate::patreon::fetch_patrons_web(), Message::PatronsFetched);
-        s.videos_loading = true;
-        let videos = Task::perform(crate::videos::fetch_playlist_web(), Message::VideosFetched);
-        s.discussions_loading = true;
-        let discussions = Task::perform(
-            crate::discussions::fetch_discussions_web(),
-            Message::DiscussionsFetched,
-        );
         let thumbs_fetch = s.refresh_recent_thumbs();
         // Crash-recovery scan: OPFS snapshots newer than a drawing's last
         // saved copy come back as a restore prompt (stale ones are deleted).
@@ -7243,16 +6733,7 @@ impl OpenCADStudio {
         };
         (
             s,
-            Task::batch([
-                focus,
-                fonts,
-                patrons,
-                videos,
-                discussions,
-                thumbs_fetch,
-                autosave_scan,
-                deep_link,
-            ]),
+            Task::batch([focus, fonts, thumbs_fetch, autosave_scan, deep_link]),
         )
     }
 }
@@ -7311,11 +6792,6 @@ impl Drop for OpenCADStudio {
     fn drop(&mut self) {
         #[cfg(target_arch = "wasm32")]
         crate::sys::set_unsaved_changes_warning(false);
-        // Kill plugin runner processes as soon as the application state is
-        // dropped, instead of waiting for the thread-local manager destructor.
-        // This makes host shutdown deterministic and fast on every exit path.
-        #[cfg(not(target_arch = "wasm32"))]
-        crate::plugin::external::shutdown_plugins();
     }
 }
 

@@ -37,13 +37,17 @@ impl OpenCADStudio {
             // WIPEOUT's Frames option: a new mode regenerates twice (the
             // reference prints it twice); the current mode changes nothing.
             cmd if cmd.starts_with("_WIPEOUT_FRAMES ") => {
-                let mode = cmd["_WIPEOUT_FRAMES ".len()..].trim().parse::<i16>().unwrap_or(1);
+                let mode = cmd["_WIPEOUT_FRAMES ".len()..]
+                    .trim()
+                    .parse::<i16>()
+                    .unwrap_or(1);
                 let current = crate::modules::draw::draw::wipeout::wipeout_frame_mode(
                     &self.tabs[i].scene.document,
                 );
                 if mode != current {
                     let task = self.dispatch_command(&format!("WIPEOUTFRAME {mode}"));
-                    self.command_line.push_output(crate::t!("Regenerating model.").as_ref());
+                    self.command_line
+                        .push_output(crate::t!("Regenerating model.").as_ref());
                     return Some(task);
                 }
                 return Some(Task::none());
@@ -237,7 +241,9 @@ impl OpenCADStudio {
                                 if attr.tag.to_uppercase() == old_up {
                                     let previous = attr.tag.clone();
                                     attr.tag = (*new).to_string();
-                                    reports.push(format!("  Insert {handle:x}: [{previous}] -> [{new}]"));
+                                    reports.push(format!(
+                                        "  Insert {handle:x}: [{previous}] -> [{new}]"
+                                    ));
                                     changed += 1;
                                     renamed_here += 1;
                                 }
@@ -259,9 +265,8 @@ impl OpenCADStudio {
                             .as_ref(),
                         );
                     } else {
-                        self.command_line.push_error(
-                            crate::tf!("ATTEDIT: tag '{old_up}' not found.").as_ref(),
-                        );
+                        self.command_line
+                            .push_error(crate::tf!("ATTEDIT: tag '{old_up}' not found.").as_ref());
                     }
                 } else if option.as_deref() == Some("REPLACE") {
                     let (Some(old), Some(new)) = (args.get(1).copied(), args.get(2).copied())
@@ -387,15 +392,16 @@ impl OpenCADStudio {
                     let mut lines = Vec::new();
                     let mut found_any = false;
                     for handle in &targets {
-                        if let Some(document::EntityType::Insert(ins)) = self.tabs[i]
-                            .scene
-                            .document
-                            .get_entity(*handle)
+                        if let Some(document::EntityType::Insert(ins)) =
+                            self.tabs[i].scene.document.get_entity(*handle)
                         {
                             found_any = true;
                             if args.is_empty() {
                                 if ins.attributes.is_empty() {
-                                    lines.push(format!("  Insert {:x}: no attributes.", handle.value()));
+                                    lines.push(format!(
+                                        "  Insert {:x}: no attributes.",
+                                        handle.value()
+                                    ));
                                 } else {
                                     for attr in &ins.attributes {
                                         lines.push(format!(
@@ -713,55 +719,11 @@ impl OpenCADStudio {
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
 
-            "3DPOLY" => {
-                use crate::modules::draw::draw::poly3d::Poly3dCommand;
-                let new_cmd = Poly3dCommand::new();
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            "3DMESH" => {
-                use crate::modules::draw::draw::mesh3d::Mesh3dCommand;
-                let new_cmd = Mesh3dCommand::new();
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            "3DFACE" => {
-                use crate::modules::draw::draw::face3d::Face3dCommand;
-                let new_cmd = Face3dCommand::new();
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            "EDGE" => {
-                use crate::modules::draw::draw::face3d::FaceEdgeCommand;
-                let faces = self.tabs[i]
-                    .scene
-                    .document
-                    .entities()
-                    .filter_map(|entity| match entity {
-                        document::EntityType::Face3D(face) => Some((face.common.handle, face.clone())),
-                        _ => None,
-                    })
-                    .collect();
-                let new_cmd = FaceEdgeCommand::new(faces);
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
             // 2D filled solid. Reached via SO / SOLID2D — the bare SOLID verb is
             // currently the shaded-display toggle (token collision tracked).
             "SOLID" | "SOLID2D" => {
                 use crate::modules::draw::draw::solid2d::Solid2dCommand;
                 let new_cmd = Solid2dCommand::new();
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            "HELIX" => {
-                use crate::modules::draw::draw::helix::HelixCommand;
-                let new_cmd = HelixCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
@@ -793,7 +755,10 @@ impl OpenCADStudio {
             {
                 use crate::modules::draw::select::SelectObjectsCommand;
                 let (prompt, apply) = if cmd == "CENTERRESET" {
-                    (crate::tr!("center-cmd", "reset-select"), "_CENTERRESET_APPLY")
+                    (
+                        crate::tr!("center-cmd", "reset-select"),
+                        "_CENTERRESET_APPLY",
+                    )
                 } else {
                     (
                         crate::tr!("center-cmd", "disassociate-select"),
@@ -829,8 +794,11 @@ impl OpenCADStudio {
                 if count > 0 {
                     self.tabs[i].dirty = true;
                 }
-                self.command_line
-                    .push_output(&crate::tr!("center-cmd", "reset-done", count = count));
+                self.command_line.push_output(&crate::tr!(
+                    "center-cmd",
+                    "reset-done",
+                    count = count
+                ));
             }
 
             "CENTERREASSOCIATE" => {
@@ -865,8 +833,11 @@ impl OpenCADStudio {
                 if count > 0 {
                     self.tabs[i].dirty = true;
                 }
-                self.command_line
-                    .push_output(&crate::tr!("center-cmd", "disassociate-done", count = count));
+                self.command_line.push_output(&crate::tr!(
+                    "center-cmd",
+                    "disassociate-done",
+                    count = count
+                ));
                 for (mark, associated) in was_associated {
                     if associated {
                         self.command_line.push_output(&if mark {
@@ -1232,7 +1203,9 @@ impl OpenCADStudio {
                     crate::command::WorkingPlane::default()
                 };
                 let mut sources = self.tabs[i].scene.boundary_sources_on_plane(plane, 1.0e-6);
-                self.tabs[i].scene.retain_sources_on_screen(&mut sources, plane);
+                self.tabs[i]
+                    .scene
+                    .retain_sources_on_screen(&mut sources, plane);
                 let selected = self.tabs[i]
                     .scene
                     .selected_entities()
@@ -1247,7 +1220,11 @@ impl OpenCADStudio {
 
             "ELLIPSE" => {
                 use crate::modules::draw::draw::ellipse::EllipseCommand;
-                let pellipse = self.tabs[i].scene.document.header.create_ellipse_as_polyline;
+                let pellipse = self.tabs[i]
+                    .scene
+                    .document
+                    .header
+                    .create_ellipse_as_polyline;
                 crate::modules::draw::defaults::set_pellipse(pellipse);
                 let new_cmd = EllipseCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1256,7 +1233,11 @@ impl OpenCADStudio {
 
             "ELLIPSE_AXIS" => {
                 use crate::modules::draw::draw::ellipse::EllipseAxisCommand;
-                let pellipse = self.tabs[i].scene.document.header.create_ellipse_as_polyline;
+                let pellipse = self.tabs[i]
+                    .scene
+                    .document
+                    .header
+                    .create_ellipse_as_polyline;
                 crate::modules::draw::defaults::set_pellipse(pellipse);
                 let new_cmd = EllipseAxisCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1265,7 +1246,11 @@ impl OpenCADStudio {
 
             "ELLIPSE_ARC" => {
                 use crate::modules::draw::draw::ellipse::EllipseArcCommand;
-                let pellipse = self.tabs[i].scene.document.header.create_ellipse_as_polyline;
+                let pellipse = self.tabs[i]
+                    .scene
+                    .document
+                    .header
+                    .create_ellipse_as_polyline;
                 crate::modules::draw::defaults::set_pellipse(pellipse);
                 let new_cmd = EllipseArcCommand::new();
                 self.command_line.push_info(&new_cmd.prompt());
@@ -1436,7 +1421,11 @@ impl OpenCADStudio {
             }
 
             cmd if cmd.starts_with("DCDISPLAY ") => {
-                let visible = match cmd["DCDISPLAY ".len()..].trim().to_ascii_uppercase().as_str() {
+                let visible = match cmd["DCDISPLAY ".len()..]
+                    .trim()
+                    .to_ascii_uppercase()
+                    .as_str()
+                {
                     "" | "S" | "SHOW" => true,
                     "H" | "HIDE" => false,
                     _ => {
@@ -2627,162 +2616,6 @@ impl OpenCADStudio {
                 self.tabs[i].active_cmd = Some(Box::new(command));
             }
 
-            // ── Model commands (3D primitives) ─────────────────────────────
-            "CYLINDER" => {
-                use crate::modules::model::cylinder_cmd::CylinderCommand;
-                let new_cmd = CylinderCommand::new();
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-            "BOX" | "WEDGE" | "CONE" | "SPHERE" | "PYRAMID" | "PYR" | "TORUS" => {
-                use crate::modules::model::primitive_cmd::PrimitiveCommand;
-                let new_cmd = PrimitiveCommand::new(cmd);
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            "SHELL" | "SOLIDEDIT" => {
-                use crate::modules::model::shell_cmd::ShellCommand;
-                let selected = self.tabs[i]
-                    .scene
-                    .selected_handles_in_order()
-                    .into_iter()
-                    .filter(|handle| !self.tabs[i].scene.is_layer_locked(*handle))
-                    .filter(|handle| {
-                        matches!(
-                            self.tabs[i].scene.document.get_entity(*handle),
-                            Some(document::EntityType::Solid3D(_))
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                // `then_some` evaluates its argument eagerly: indexing an empty
-                // selection here crashed the app when SHELL was started with
-                // nothing selected.
-                let target = match selected.as_slice() {
-                    [handle] => Some(*handle),
-                    _ => None,
-                };
-                let new_cmd = if cmd == "SHELL" {
-                    ShellCommand::direct(target)
-                } else {
-                    ShellCommand::solid_edit(target)
-                };
-                self.command_line.push_info(&new_cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-            }
-
-            // ── Solid booleans ─────────────────────────────────────────────
-            "UNION" => {
-                use crate::modules::model::boolean_cmd::BoolOp;
-                if self.union_ready() {
-                    return Some(self.solid_boolean(BoolOp::Union));
-                }
-                use crate::modules::draw::select::SelectObjectsCommand;
-                let selection = SelectObjectsCommand::plain("UNION", "UNIONAPPLY");
-                self.command_line.push_info(&selection.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(selection));
-            }
-
-            "UNIONAPPLY" => {
-                use crate::modules::model::boolean_cmd::BoolOp;
-                return Some(self.solid_boolean(BoolOp::Union));
-            }
-
-            "INTERSECT" => {
-                use crate::modules::model::boolean_cmd::BoolOp;
-                if !self.intersect_ready() {
-                    use crate::modules::draw::select::SelectObjectsCommand;
-                    let selection = SelectObjectsCommand::new(cmd);
-                    self.command_line.push_info(&selection.prompt());
-                    self.tabs[i].active_cmd = Some(Box::new(selection));
-                } else {
-                    return Some(self.solid_boolean(BoolOp::Intersect));
-                }
-            }
-
-            "SUBTRACT" => {
-                use crate::modules::model::boolean_cmd::SubtractCommand;
-                let (bases, bases_have_mesh) = {
-                    let scene = &self.tabs[i].scene;
-                    let bases = scene
-                        .selected_handles_in_order()
-                        .into_iter()
-                        .filter(|handle| !scene.is_layer_locked(*handle))
-                        .filter(|handle| {
-                            matches!(
-                                scene.document.get_entity(*handle),
-                                Some(
-                                    document::EntityType::Solid3D(_)
-                                        | document::EntityType::Region(_)
-                                        | document::EntityType::Surface(_)
-                                        | document::EntityType::Mesh(_)
-                                        | document::EntityType::PolygonMesh(_)
-                                        | document::EntityType::PolyfaceMesh(_)
-                                )
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    let bases_have_mesh = bases.iter().any(|handle| {
-                        matches!(
-                            scene.document.get_entity(*handle),
-                            Some(
-                                document::EntityType::Mesh(_)
-                                    | document::EntityType::PolygonMesh(_)
-                                    | document::EntityType::PolyfaceMesh(_)
-                            )
-                        )
-                    });
-                    (bases, bases_have_mesh)
-                };
-                self.tabs[i].scene.deselect_all();
-                let subtract = SubtractCommand::new(bases, bases_have_mesh);
-                self.command_line.push_info(&subtract.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(subtract));
-            }
-
-            // SECTIONCULL — erase what lies outside a section object.
-            "SECTIONCULL" => {
-                return Some(self.section_cull());
-            }
-
-            // INTERFERE — non-destructive intersect: solid from the overlap.
-            "INTERFERE" => {
-                return Some(self.solid_interfere());
-            }
-
-            // FLATSHOT — flatten the selected solid's edges to 2D lines at Z=0.
-            "FLATSHOT" => {
-                return Some(self.solid_flatshot());
-            }
-
-            // CONVTOSURFACE — convert the selected solid(s) to surface entities.
-            "CONVTOSURFACE" => {
-                return Some(self.solid_convtosurface());
-            }
-
-            "POLYSOLID" => {
-                use crate::modules::model::polysolid_cmd::PolysolidCommand;
-                let preselected = self.tabs[i]
-                    .scene
-                    .selected_entities()
-                    .into_iter()
-                    .find(|(_, entity)| {
-                        matches!(
-                            entity,
-                            document::EntityType::Line(_)
-                                | document::EntityType::Arc(_)
-                                | document::EntityType::Circle(_)
-                                | document::EntityType::Ellipse(_)
-                                | document::EntityType::LwPolyline(_)
-                                | document::EntityType::Spline(_)
-                        )
-                    })
-                    .map(|(handle, entity)| (handle, entity.clone()));
-                let c = PolysolidCommand::new(preselected);
-                self.command_line.push_info(&c.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(c));
-            }
-
             // SPLINEFIT — fit a smooth spline through the selected polyline's points.
             "SPLINEFIT" | "FITSPLINE" => {
                 return Some(self.fit_spline());
@@ -2914,325 +2747,6 @@ impl OpenCADStudio {
                 }
             }
 
-            // PYRAMID <radius> <height> [sides] keeps the direct numeric form.
-            cmd if cmd.starts_with("PYRAMID ") || cmd.starts_with("PYR ") => {
-                let nums: Vec<f64> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .filter_map(|s| s.parse::<f64>().ok())
-                    .collect();
-                if nums.len() >= 2 && nums[0] > 0.0 && nums[1] > 0.0 {
-                    let sides = nums.get(2).map(|s| *s as usize).unwrap_or(4);
-                    return Some(self.solid_pyramid(nums[0], nums[1], sides));
-                }
-                self.command_line.push_info(
-                    crate::t!("Usage: PYRAMID <radius> <height> [sides]   (default 4 sides)")
-                        .as_ref(),
-                );
-            }
-
-            // SECTION [X|Y|Z] <value> — draw the cross-section outline of the solid.
-            "SECTION" => {
-                use crate::command::SelectThenKeywordCommand;
-                let has_sel = !self.tabs[i].scene.selected_entities().is_empty();
-                let c = SelectThenKeywordCommand::new(
-                    "SECTION",
-                    "SECTION  cutting-plane axis  [X / Y / Z]:",
-                    vec![
-                        ("X", "X", Some("SECTION  offset along X:")),
-                        ("Y", "Y", Some("SECTION  offset along Y:")),
-                        ("Z", "Z", Some("SECTION  offset along Z:")),
-                    ],
-                    has_sel,
-                );
-                self.command_line.push_info(&c.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(c));
-            }
-            cmd if cmd.starts_with("SECTION ") => {
-                let parts: Vec<String> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .map(|s| s.to_uppercase())
-                    .collect();
-                let (axis, val_idx) = match parts.first().map(String::as_str) {
-                    Some("X") => (0, 1),
-                    Some("Y") => (1, 1),
-                    Some("Z") => (2, 1),
-                    _ => (2, 0),
-                };
-                match parts.get(val_idx).and_then(|s| s.parse::<f64>().ok()) {
-                    Some(v) => return Some(self.solid_section(axis, v)),
-                    None => self.command_line.push_info(
-                        crate::t!(
-                            "Usage: SECTION [X|Y|Z] <value>   (cross-sections the selected solid)"
-                        )
-                        .as_ref(),
-                    ),
-                }
-            }
-
-            "SECTIONPLANE" => {
-                use crate::modules::model::sectionplane_cmd::SectionPlaneCommand;
-                let (bounds, next_name) = {
-                    let scene = &mut self.tabs[i].scene;
-                    let solid_handles = scene
-                        .document
-                        .entities()
-                        .filter_map(|entity| {
-                            matches!(
-                                entity,
-                                document::EntityType::Solid3D(_)
-                                    | document::EntityType::Surface(_)
-                                    | document::EntityType::Region(_)
-                                    | document::EntityType::Body(_)
-                            )
-                            .then_some(entity.common().handle)
-                        })
-                        .collect::<Vec<_>>();
-                    scene.restore_solid_models(&solid_handles);
-                    let bounds = solid_handles
-                        .iter()
-                        .filter_map(|handle| scene.solid_models.get(handle))
-                        .filter_map(crate::scene::model::solid_model::extent)
-                        .fold(None::<(glam::DVec3, glam::DVec3)>, |bounds, (low, high)| {
-                            let low = glam::DVec3::from_array(low);
-                            let high = glam::DVec3::from_array(high);
-                            Some(match bounds {
-                                None => (low, high),
-                                Some((min, max)) => (min.min(low), max.max(high)),
-                            })
-                        });
-                    let next_name = scene
-                        .document
-                        .entities()
-                        .filter_map(|entity| {
-                            let document::EntityType::Extended(extended) = entity else {
-                                return None;
-                            };
-                            let document::entities::ExtendedEntityData::SectionObject(data) =
-                                &extended.data
-                            else {
-                                return None;
-                            };
-                            data.name
-                                .strip_prefix("Section Plane (")
-                                .and_then(|name| name.strip_suffix(')'))
-                                .and_then(|name| name.parse::<usize>().ok())
-                        })
-                        .max()
-                        .unwrap_or(0)
-                        + 1;
-                    (bounds, next_name)
-                };
-                let command = SectionPlaneCommand::new(bounds, next_name);
-                self.command_line.push_info(&command.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(command));
-            }
-
-            // 3DALIGN <18 numbers> — align the selected solid by 3 source→3 dest points.
-            cmd if cmd == "3DALIGN"
-                || cmd == "ALIGN3D"
-                || cmd.starts_with("3DALIGN ")
-                || cmd.starts_with("ALIGN3D ") =>
-            {
-                let n: Vec<f64> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .filter_map(|s| s.parse::<f64>().ok())
-                    .collect();
-                if n.len() >= 18 {
-                    let src = [[n[0], n[1], n[2]], [n[3], n[4], n[5]], [n[6], n[7], n[8]]];
-                    let dst = [
-                        [n[9], n[10], n[11]],
-                        [n[12], n[13], n[14]],
-                        [n[15], n[16], n[17]],
-                    ];
-                    return Some(self.solid_align3d(src, dst));
-                }
-                self.command_line.push_info(
-                    crate::t!("Usage: 3DALIGN <sx1 sy1 sz1 … sx3 sy3 sz3  dx1 dy1 dz1 … dx3 dy3 dz3>  (18 numbers: 3 source then 3 destination points)").as_ref(),
-                );
-            }
-
-            // 3DMIRROR [X|Y|Z] — add a mirror of the selected solid across a plane.
-            "3DMIRROR" | "MIRROR3D" => {
-                use crate::command::SelectThenKeywordCommand;
-                let has_sel = !self.tabs[i].scene.selected_entities().is_empty();
-                let c = SelectThenKeywordCommand::new(
-                    "3DMIRROR",
-                    "3DMIRROR  mirror plane  [X / Y / Z]:",
-                    vec![("X", "X", None), ("Y", "Y", None), ("Z", "Z", None)],
-                    has_sel,
-                );
-                self.command_line.push_info(&c.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(c));
-            }
-            cmd if cmd.starts_with("3DMIRROR ") || cmd.starts_with("MIRROR3D ") => {
-                let parts: Vec<String> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .map(|s| s.to_uppercase())
-                    .collect();
-                let axis = match parts.first().map(String::as_str) {
-                    Some("X") => 0,
-                    Some("Y") => 1,
-                    Some("Z") => 2,
-                    _ => {
-                        self.command_line.push_info(
-                            crate::t!("Usage: 3DMIRROR [X|Y|Z]   (mirrors the selected solid across that plane)").as_ref(),
-                        );
-                        return None;
-                    }
-                };
-                return Some(self.solid_mirror3d(axis));
-            }
-
-            // 3DROTATE [X|Y|Z] <angle> — rotate the selected solid about an axis.
-            // 3DROTATE — any objects about an axis through a base point.
-            "3DROTATE" | "ROTATE3D" => {
-                let handles: Vec<_> = self.tabs[i]
-                    .scene
-                    .selected_entities()
-                    .into_iter()
-                    .map(|(h, _)| h)
-                    .collect();
-                if handles.is_empty() {
-                    use crate::modules::draw::select::SelectObjectsCommand;
-                    let cmd = SelectObjectsCommand::new("3DROTATE");
-                    self.command_line.push_info(&cmd.prompt());
-                    self.tabs[i].active_cmd = Some(Box::new(cmd));
-                } else {
-                    use crate::modules::draw::modify::rotate::RotateCommand;
-                    let wires = self.tabs[i].scene.wire_models_for(&handles);
-                    let new_cmd = RotateCommand::new_3d(handles, wires);
-                    self.command_line.push_info(&new_cmd.prompt());
-                    self.tabs[i].active_cmd = Some(Box::new(new_cmd));
-                }
-            }
-            cmd if cmd.starts_with("3DROTATE ") || cmd.starts_with("ROTATE3D ") => {
-                let parts: Vec<String> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .map(|s| s.to_uppercase())
-                    .collect();
-                let axis = match parts.first().map(String::as_str) {
-                    Some("X") => 0,
-                    Some("Y") => 1,
-                    _ => 2,
-                };
-                let angle: Option<f64> = parts.iter().find_map(|s| s.parse::<f64>().ok());
-                match angle {
-                    Some(a) => return Some(self.solid_rotate3d(axis, a)),
-                    None => self.command_line.push_info(
-                        crate::t!("Usage: 3DROTATE [X|Y|Z] <angle>   (rotates the selected solid)")
-                            .as_ref(),
-                    ),
-                }
-            }
-
-            "SLICE" | "SL" => {
-                use crate::modules::model::slice_cmd::SliceCommand;
-                let (targets, centre, radius, view_normal) = {
-                    let scene = &mut self.tabs[i].scene;
-                    let mut targets = scene
-                        .selected_handles_in_order()
-                        .into_iter()
-                        .filter(|handle| !scene.is_layer_locked(*handle))
-                        .filter(|handle| {
-                            matches!(
-                                scene.document.get_entity(*handle),
-                                Some(
-                                    document::EntityType::Solid3D(_)
-                                        | document::EntityType::Surface(_)
-                                        | document::EntityType::Mesh(_)
-                                        | document::EntityType::PolygonMesh(_)
-                                        | document::EntityType::PolyfaceMesh(_)
-                                )
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    scene.restore_solid_models(&targets);
-                    let mesh_extent = |handle: &document::Handle| {
-                        let entity = scene.document.get_entity(*handle)?;
-                        let (vertices, _) = crate::entities::mesh::mesh_polygons(entity)?;
-                        vertices.iter().fold(None, |bounds, point| {
-                            let (mut min, mut max) = bounds.unwrap_or((*point, *point));
-                            for axis in 0..3 {
-                                min[axis] = f64::min(min[axis], point[axis]);
-                                max[axis] = f64::max(max[axis], point[axis]);
-                            }
-                            Some((min, max))
-                        })
-                    };
-                    targets.retain(|handle| {
-                        scene.solid_models.contains_key(handle) || mesh_extent(handle).is_some()
-                    });
-                    let bounds = targets
-                        .iter()
-                        .filter_map(|handle| match scene.solid_models.get(handle) {
-                            Some(body) => crate::scene::model::solid_model::extent(body),
-                            None => mesh_extent(handle),
-                        })
-                        .fold(None::<([f64; 3], [f64; 3])>, |bounds, (low, high)| {
-                            Some(match bounds {
-                                None => (low, high),
-                                Some((mut min, mut max)) => {
-                                    for axis in 0..3 {
-                                        min[axis] = min[axis].min(low[axis]);
-                                        max[axis] = max[axis].max(high[axis]);
-                                    }
-                                    (min, max)
-                                }
-                            })
-                        });
-                    let (centre, radius) =
-                        bounds.map_or((glam::DVec3::ZERO, 10.0), |(min, max)| {
-                            let min = glam::DVec3::from_array(min);
-                            let max = glam::DVec3::from_array(max);
-                            ((min + max) * 0.5, (max - min).length().max(2.0) * 0.65)
-                        });
-                    (targets, centre, radius, scene.active_gaze_dir().as_dvec3())
-                };
-                let c = SliceCommand::new(targets, view_normal, centre, radius);
-                self.command_line.push_info(&c.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(c));
-            }
-            cmd if cmd.starts_with("SLICE ") || cmd.starts_with("SL ") => {
-                let parts: Vec<String> = cmd
-                    .split_whitespace()
-                    .skip(1)
-                    .map(|s| s.to_uppercase())
-                    .collect();
-                let (axis, val_idx) = match parts.first().map(String::as_str) {
-                    Some("X") => (0, 1),
-                    Some("Y") => (1, 1),
-                    Some("Z") => (2, 1),
-                    _ => (2, 0), // default Z plane
-                };
-                let value: Option<f64> = parts.get(val_idx).and_then(|s| s.parse().ok());
-                let keep_low = !parts.iter().any(|s| s == "TOP");
-                match value {
-                    Some(v) => {
-                        let (origin, x, normal) = match axis {
-                            0 => ([v, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
-                            1 => ([0.0, v, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
-                            _ => ([0.0, 0.0, v], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
-                        };
-                        let plane = kernel::space::Plane::orthonormal(origin, x, normal)
-                            .expect("fixed world axes define a plane");
-                        let side = glam::DVec3::from_array(origin)
-                            + glam::DVec3::from_array(normal) * if keep_low { -1.0 } else { 1.0 };
-                        return Some(self.slice_selected(plane, Some(side)));
-                    }
-                    None => self.command_line.push_info(
-                        crate::t!(
-                            "Usage: SLICE [X|Y|Z] <value> [TOP|BOTTOM]   (cuts the selected solid)"
-                        )
-                        .as_ref(),
-                    ),
-                }
-            }
-
             // ── Annotate commands ──────────────────────────────────────────
             "TEXT" => {
                 use crate::modules::annotate::text::TextCommand;
@@ -3304,7 +2818,8 @@ impl OpenCADStudio {
                     &self.tabs[i].scene.document,
                     &style,
                 );
-                let new_cmd = MTextCommand::with_defaults(height, style).with_annotative(annotative);
+                let new_cmd =
+                    MTextCommand::with_defaults(height, style).with_annotative(annotative);
                 self.command_line.push_info(&new_cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(new_cmd));
             }
@@ -3459,7 +2974,8 @@ impl OpenCADStudio {
                 if let Some((kind, invert)) =
                     crate::scene::model::hatch_model::GradientKind::from_choice_label(&label)
                 {
-                    settings.fill = crate::modules::draw::draw::hatch::HatchFill::Gradient(kind, invert);
+                    settings.fill =
+                        crate::modules::draw::draw::hatch::HatchFill::Gradient(kind, invert);
                 }
             }
             M::Angle(typed) => {
@@ -3475,15 +2991,21 @@ impl OpenCADStudio {
                 self.hatch_drafts.scale = Some(typed);
             }
             M::Spacing(typed) => {
-                if let (Some(value), crate::modules::draw::draw::hatch::HatchFill::User { spacing, .. }) =
-                    (number(&typed).filter(|value| *value > 0.0), &mut settings.fill)
-                {
+                if let (
+                    Some(value),
+                    crate::modules::draw::draw::hatch::HatchFill::User { spacing, .. },
+                ) = (
+                    number(&typed).filter(|value| *value > 0.0),
+                    &mut settings.fill,
+                ) {
                     *spacing = value;
                 }
                 self.hatch_drafts.spacing = Some(typed);
             }
             M::Double(on) => {
-                if let crate::modules::draw::draw::hatch::HatchFill::User { double, .. } = &mut settings.fill {
+                if let crate::modules::draw::draw::hatch::HatchFill::User { double, .. } =
+                    &mut settings.fill
+                {
                     *double = on;
                 }
             }
@@ -3506,7 +3028,9 @@ impl OpenCADStudio {
                 self.hatch_drafts.gap = Some(typed);
             }
             M::Method(method) => settings.method = method,
-            M::Islands(code) => settings.islands = crate::ui::window::hatch_panel::island_style(code),
+            M::Islands(code) => {
+                settings.islands = crate::ui::window::hatch_panel::island_style(code)
+            }
             M::Associative(on) => settings.associative = on,
             M::Separate(on) => settings.separate = on,
             M::KeepBoundaries(on) => settings.keep_boundaries = on,
@@ -3594,7 +3118,11 @@ impl OpenCADStudio {
             }
             M::MovePanel(up) => {
                 if let Some(index) = selected {
-                    let other = if up { index.checked_sub(1) } else { Some(index + 1) };
+                    let other = if up {
+                        index.checked_sub(1)
+                    } else {
+                        Some(index + 1)
+                    };
                     if let Some(other) = other.filter(|other| *other < panels.len()) {
                         panels.swap(index, other);
                         state.selected = Some(other);
@@ -3613,9 +3141,10 @@ impl OpenCADStudio {
             M::AddCommand => {
                 let typed = state.draft.trim().to_uppercase();
                 state.draft.clear();
-                if let (Some(panel), false) =
-                    (selected.and_then(|index| panels.get_mut(index)), typed.is_empty())
-                {
+                if let (Some(panel), false) = (
+                    selected.and_then(|index| panels.get_mut(index)),
+                    typed.is_empty(),
+                ) {
                     let command = self.resolve_alias(&typed).unwrap_or(typed);
                     panel.commands.push(command);
                 }

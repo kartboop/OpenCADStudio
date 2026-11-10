@@ -560,10 +560,7 @@ fn structured_diagnostic_line(diagnostic: &document::ReadDiagnostic) -> String {
 
 /// The acadrust commit the DWG/DXF reader was built from.
 fn reader_revision() -> String {
-    use ocs_plugin_api::version_info::{acadrust_source_hash, host_acadrust_source};
-    acadrust_source_hash(host_acadrust_source())
-        .map(|hash| hash[..7].to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+    "unknown".to_string()
 }
 
 fn diagnostic_platform() -> String {

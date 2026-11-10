@@ -9,17 +9,11 @@ pub mod edit_lock;
 // its tests) is pure and compiles everywhere; the showSaveFilePicker half
 // inside is wasm-only.
 pub mod brep_build;
-pub mod fbx;
 pub mod file_association;
 pub mod font_repo;
-pub mod georef;
 pub(crate) mod fs_access;
-pub mod iges_import;
-pub mod iges_surfaces;
-pub mod line_read;
+pub mod georef;
 pub mod linetypes;
-pub mod model_import;
-pub mod obj;
 pub mod ole_embed;
 pub mod paper_catalog;
 pub mod patterns;
@@ -31,20 +25,14 @@ pub mod print_to_printer;
 pub mod recovery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod single_instance;
-pub mod step;
-pub mod step_import;
-pub mod stl;
 pub mod svg_clipboard;
 pub mod svg_export;
-pub mod tds_import;
-pub mod tds_legacy;
-pub mod thumbnail;
-pub mod update_check;
-pub mod visual_styles;
 pub mod svg_import;
-pub mod wmf_import;
+pub mod thumbnail;
+pub mod visual_styles;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod web_recent;
+pub mod wmf_import;
 // Registered on every target so the pure helpers (and their tests) compile on
 // the native host; the OPFS half inside is wasm-only.
 pub(crate) mod web_autosave;
@@ -76,6 +64,22 @@ use document::{DwgReadOptions, DxfReader, DxfReaderConfiguration};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
+
+pub(crate) fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year) / 153 + 2;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    (year, month, day_of_year - (153 * month_prime + 2) / 5 + 1)
+}
 
 /// Thread-safe state shared by the native loader and the open overlay.
 ///
@@ -163,7 +167,10 @@ impl OpenLoadError {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn recovery_prompt(message: impl Into<String>, read_stats: Option<document::ReadStats>) -> Self {
+    fn recovery_prompt(
+        message: impl Into<String>,
+        read_stats: Option<document::ReadStats>,
+    ) -> Self {
         Self {
             message: message.into(),
             source_sha256: None,
@@ -203,8 +210,8 @@ pub async fn pick_open_path() -> Option<(PathBuf, u64)> {
         .add_filter(
             crate::t!("CAD Files").as_ref(),
             &[
-                "dwg", "dxf", "dwt", "bak", "sv$", "DWG", "DXF", "DWT", "BAK",
-                "ifccad", "ifcx", "IFCCAD", "IFCX",
+                "dwg", "dxf", "dwt", "bak", "sv$", "DWG", "DXF", "DWT", "BAK", "ifccad", "ifcx",
+                "IFCCAD", "IFCX",
             ],
         )
         .add_filter(crate::t!("DWG Files").as_ref(), &["dwg", "DWG"])
@@ -218,7 +225,10 @@ pub async fn pick_open_path() -> Option<(PathBuf, u64)> {
             &["bak", "sv$", "BAK"],
         );
     for format in ocs_save::external_formats() {
-        dialog = dialog.add_filter(ocs_save::external_format_label(*format), format.extensions());
+        dialog = dialog.add_filter(
+            ocs_save::external_format_label(*format),
+            format.extensions(),
+        );
     }
     let handle = dialog
         .add_filter(crate::t!("All Files").as_ref(), &["*"])
@@ -645,7 +655,9 @@ pub async fn pick_and_load_web(progress: Arc<OpenProgressState>) -> WebOpenOutco
         .set_title(crate::t!("Open CAD file").as_ref())
         .add_filter(
             crate::t!("CAD Files").as_ref(),
-            &["dwg", "dxf", "dwt", "DWG", "DXF", "DWT", "ifccad", "ifcx", "IFCCAD", "IFCX"],
+            &[
+                "dwg", "dxf", "dwt", "DWG", "DXF", "DWT", "ifccad", "ifcx", "IFCCAD", "IFCX",
+            ],
         )
         .add_filter(
             crate::t!("Drawing Template (*.dwt)").as_ref(),
@@ -1457,13 +1469,18 @@ fn normalize_block_origins(doc: &mut Document) {
     // Evaluated dynamic origins share coordinates with reference parameter
     // caches and authoring frames. Translating only their bodies would move
     // grips on reopen and change the next evaluation's coordinate basis.
-    let dynamic_origins: std::collections::BTreeSet<_> = doc.entities()
+    let dynamic_origins: std::collections::BTreeSet<_> = doc
+        .entities()
         .filter_map(|entity| match entity {
-            EntityType::Insert(reference) => doc.dynamic_definition_for_insert(reference.common.handle)
-                .filter(|definition| crate::scene::block_basepoint::parameter(doc, *definition).is_some())
+            EntityType::Insert(reference) => doc
+                .dynamic_definition_for_insert(reference.common.handle)
+                .filter(|definition| {
+                    crate::scene::block_basepoint::parameter(doc, *definition).is_some()
+                })
                 .map(|_| reference.block_name.to_ascii_lowercase()),
             _ => None,
-        }).collect();
+        })
+        .collect();
 
     let blocks: Vec<_> = doc
         .block_records
@@ -1688,7 +1705,9 @@ pub const SAVE_FORMAT_OPTIONS: &[&str] = &[
 
 /// The Save As format list: the DWG/DXF targets, then each listed converter.
 pub fn save_format_options() -> Vec<String> {
-    let converters = ocs_save::external_formats().iter().map(|format| ocs_save::external_format_label(*format));
+    let converters = ocs_save::external_formats()
+        .iter()
+        .map(|format| ocs_save::external_format_label(*format));
     SAVE_FORMAT_OPTIONS
         .iter()
         .copied()
@@ -2124,8 +2143,12 @@ mod save_failure_tests {
                 .as_nanos()
         ));
 
-        let error = save_as_version(&document::Document::new(), &path, document::DxfVersion::AC1032)
-            .unwrap_err();
+        let error = save_as_version(
+            &document::Document::new(),
+            &path,
+            document::DxfVersion::AC1032,
+        )
+        .unwrap_err();
 
         assert_eq!(
             error,
@@ -2221,7 +2244,10 @@ pub async fn pick_linetype_file() -> Option<(Option<std::path::PathBuf>, String)
     let dir = handle.path().parent().map(Path::to_path_buf);
     #[cfg(target_arch = "wasm32")]
     let dir = None;
-    Some((dir, String::from_utf8_lossy(&handle.read().await).into_owned()))
+    Some((
+        dir,
+        String::from_utf8_lossy(&handle.read().await).into_owned(),
+    ))
 }
 
 pub async fn pick_plot_style() -> Result<Option<plot_style::PlotStyleTable>, String> {
@@ -2266,8 +2292,8 @@ pub async fn pick_plot_style() -> Result<Option<plot_style::PlotStyleTable>, Str
     {
         let name = handle.file_name();
         let bytes: std::sync::Arc<Vec<u8>> = std::sync::Arc::new(handle.read().await);
-        let table = plot_style::PlotStyleTable::from_bytes(&name, &bytes)
-            .map_err(|e| e.to_string())?;
+        let table =
+            plot_style::PlotStyleTable::from_bytes(&name, &bytes).map_err(|e| e.to_string())?;
         plot_style::register_session_table(&name, bytes);
         Ok(Some(table))
     }
@@ -3044,8 +3070,7 @@ fn fix_double_placed_dimension_pictures(doc: &mut Document) {
             continue;
         };
         let base = dimension.base();
-        let Some(placement) = crate::scene::render_graph::dimension_picture_placement(base)
-        else {
+        let Some(placement) = crate::scene::render_graph::dimension_picture_placement(base) else {
             continue;
         };
         let Some(record) = doc.block_records.get(&base.block_name) else {
@@ -3202,8 +3227,10 @@ mod dimension_arrow_save_tests {
         dimension.definition_point = Vector3::new(0.0, 20.0, 0.0);
         dimension.base.definition_point = dimension.definition_point;
         dimension.base.text_middle_point = Vector3::new(50.0, 20.0, 0.0);
-        doc.add_entity(EntityType::Dimension(Box::new(Dimension::Linear(dimension))))
-            .unwrap();
+        doc.add_entity(EntityType::Dimension(Box::new(Dimension::Linear(
+            dimension,
+        ))))
+        .unwrap();
         doc
     }
 
@@ -3611,8 +3638,11 @@ mod prepare_save_tests {
         marker.common.owner_handle = owner;
         doc.add_entity(EntityType::Block(marker)).unwrap();
         if let Some(tag) = attribute_tag {
-            let mut attdef =
-                document::entities::AttributeDefinition::new(tag.into(), "Prompt".into(), "".into());
+            let mut attdef = document::entities::AttributeDefinition::new(
+                tag.into(),
+                "Prompt".into(),
+                "".into(),
+            );
             attdef.common.handle = doc.allocate_handle();
             attdef.common.owner_handle = owner;
             doc.add_entity(EntityType::AttributeDefinition(attdef))
@@ -3642,8 +3672,16 @@ mod prepare_save_tests {
         crate::io::linetypes::populate_document(&mut doc);
         define(&mut doc, "TAGGED", Some("TAG"));
         define(&mut doc, "PLAIN", None);
-        doc.block_records.get_mut("TAGGED").unwrap().flags.has_attributes = false;
-        doc.block_records.get_mut("PLAIN").unwrap().flags.has_attributes = true;
+        doc.block_records
+            .get_mut("TAGGED")
+            .unwrap()
+            .flags
+            .has_attributes = false;
+        doc.block_records
+            .get_mut("PLAIN")
+            .unwrap()
+            .flags
+            .has_attributes = true;
         let version = doc.version;
         let prepared = prepare_document_for_save(doc.clone(), version);
         assert!(
@@ -3718,12 +3756,24 @@ mod prepare_save_tests {
             hyperlink_base: "C:/docs".into(),
             ..Default::default()
         };
-        assert_eq!(drawing_properties_lost_on_save(&info, "C:/docs", AC1015, false), 0);
+        assert_eq!(
+            drawing_properties_lost_on_save(&info, "C:/docs", AC1015, false),
+            0
+        );
         assert_eq!(drawing_properties_lost_on_save(&info, "", AC1015, false), 1);
-        assert_eq!(drawing_properties_lost_on_save(&info, "C:/docs", AC1014, false), 1);
+        assert_eq!(
+            drawing_properties_lost_on_save(&info, "C:/docs", AC1014, false),
+            1
+        );
         info.hyperlink_base.clear();
-        assert_eq!(drawing_properties_lost_on_save(&info, "D:/base", AC1015, false), 0);
-        assert_eq!(drawing_properties_lost_on_save(&info, "D:/base", AC1014, true), 1);
+        assert_eq!(
+            drawing_properties_lost_on_save(&info, "D:/base", AC1015, false),
+            0
+        );
+        assert_eq!(
+            drawing_properties_lost_on_save(&info, "D:/base", AC1014, true),
+            1
+        );
         assert_eq!(drawing_properties_lost_on_save(&info, "", AC1014, true), 0);
     }
 

@@ -1,10 +1,10 @@
 ---
 summary: Traces the points of a point cloud on a live section plane and draws them as lines or polylines.
-related: SECTIONPLANE, PCEXTRACTEDGE, PCEXTRACTCORNER, PCEXTRACTCENTERLINE, POINTCLOUDATTACH
+related: PCEXTRACTEDGE, PCEXTRACTCORNER, PCEXTRACTCENTERLINE, POINTCLOUDATTACH
 ---
 
 ## Usage
-1. Make sure the drawing has a section object with live section turned on (see [`SECTIONPLANE`](SECTIONPLANE-Command)).
+1. Make sure the drawing already contains a compatible section object with live section turned on.
 2. Start `PCEXTRACTSECTION`.
 3. Select the point cloud.
 4. In the settings dialog, adjust the options and click **Create**.

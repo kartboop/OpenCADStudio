@@ -1,6 +1,6 @@
 ---
 summary: Moves the selected objects onto the XY plane at Z=0.
-related: FLATSHOT, PROPERTIES
+related: PROPERTIES
 ---
 
 ## Usage

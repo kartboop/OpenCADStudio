@@ -57,23 +57,3 @@ A 100 × 60 plate with two holes, rounded corners and dimensions.
 ![The Plot dialog](images/screens/plot-dialog.png)
 
 See [Layouts and Viewports](Layouts-and-Viewports) and [Plotting and Publishing](Plotting-and-Publishing) for page setups, plot styles and publishing several sheets.
-
----
-
-## 3. A simple 3D part
-
-A block with a hole through it.
-
-1. **Ctrl+N** for a new drawing.
-2. `BOX`: first corner `0,0,0`, other corner `80,50,0`, height `30`.
-3. `CYLINDER`: centre `40,25,0`, radius `10`, height `30`.
-4. Look at it in 3D: click a corner of the ViewCube, or use the **View** tab › **Isometric**. Choose a shaded visual style with `VSCURRENT` or the **View** tab.
-
-![Box and cylinder](images/screens/tutorial-3d-1.png)
-
-5. `SUBTRACT`: select the box and press Enter, then select the cylinder and press Enter. The cylinder is cut out of the box.
-6. Save as `part.dwg`.
-
-![The finished part](images/screens/tutorial-3d-2.png)
-
-Continue with [3D Modelling](3D-Modelling) for extrusions, sweeps, lofts, edge fillets and sections.

@@ -124,8 +124,6 @@ pub enum PanelId {
     ExternalReferences,
     /// Outline of the drawing's origin planes, open sketch and solid bodies.
     Browser,
-    /// Node library of the node graph overlay.
-    NodeGraph,
     /// Regions and scans of the drawing's point clouds.
     PointCloudManager,
     /// Block counts (COUNTLIST).
@@ -140,13 +138,11 @@ pub enum PanelId {
     QuickCalc,
     /// The whole command history, kept open beside the drawing.
     CommandHistory,
-    /// Dynamic plugin dockable side panel / palette (identified by unique numeric ID).
-    Plugin(u32),
 }
 
 impl PanelId {
     /// Every panel, in the order the pallet menu lists them.
-    pub const ALL: [PanelId; 16] = [
+    pub const ALL: [PanelId; 15] = [
         PanelId::Properties,
         PanelId::GraphicAttributes,
         PanelId::BlockPalette,
@@ -155,7 +151,6 @@ impl PanelId {
         PanelId::ParametersManager,
         PanelId::ExternalReferences,
         PanelId::Browser,
-        PanelId::NodeGraph,
         PanelId::PointCloudManager,
         PanelId::Count,
         PanelId::SheetSetManager,
@@ -176,7 +171,6 @@ impl PanelId {
             PanelId::ParametersManager => "Parameters Manager",
             PanelId::ExternalReferences => "External References",
             PanelId::Browser => "Browser",
-            PanelId::NodeGraph => "Node Graph",
             PanelId::PointCloudManager => "Point Cloud Manager",
             PanelId::Count => "Count",
             PanelId::SheetSetManager => "Sheet Set Manager",
@@ -184,7 +178,6 @@ impl PanelId {
             PanelId::Laywalk => "Layer Walk",
             PanelId::QuickCalc => "QuickCalc",
             PanelId::CommandHistory => "Command History",
-            PanelId::Plugin(_) => "Plugin",
         }
     }
 
@@ -201,7 +194,6 @@ impl PanelId {
             PanelId::ParametersManager => include_bytes!("../../assets/icons/table.svg"),
             PanelId::ExternalReferences => crate::ui::icons::FOLDER_OPEN,
             PanelId::Browser => include_bytes!("../../assets/icons/content_browser.svg"),
-            PanelId::NodeGraph => crate::ui::icons::NODE_GRAPH,
             PanelId::PointCloudManager => include_bytes!("../../assets/icons/pc_attach.svg"),
             PanelId::Count => include_bytes!("../../assets/icons/data_extract.svg"),
             PanelId::SheetSetManager => include_bytes!("../../assets/icons/sheetset.svg"),
@@ -209,7 +201,6 @@ impl PanelId {
             PanelId::Laywalk => include_bytes!("../../assets/icons/layers/laywalk.svg"),
             PanelId::QuickCalc => crate::ui::window::quick_calc::ICON,
             PanelId::CommandHistory => include_bytes!("../../assets/icons/ui/list.svg"),
-            PanelId::Plugin(_) => crate::ui::icons::MORE,
         }
     }
 
@@ -224,7 +215,6 @@ impl PanelId {
             PanelId::ParametersManager => 420.0,
             PanelId::ExternalReferences => 460.0,
             PanelId::Browser => 230.0,
-            PanelId::NodeGraph => 220.0,
             PanelId::PointCloudManager => 280.0,
             PanelId::Count => 280.0,
             PanelId::SheetSetManager => 280.0,
@@ -232,7 +222,6 @@ impl PanelId {
             PanelId::Laywalk => 420.0,
             PanelId::QuickCalc => 320.0,
             PanelId::CommandHistory => 420.0,
-            PanelId::Plugin(_) => 280.0,
         }
     }
 
@@ -1229,7 +1218,8 @@ pub fn strip_tab_h(title: &str, labelled: bool) -> f32 {
     if !labelled {
         return STRIP_CELL_H;
     }
-    STRIP_CELL_H - 4.0 + crate::ui::style::text_metrics::width(title, STRIP_LABEL_SIZE, false).ceil()
+    STRIP_CELL_H - 4.0
+        + crate::ui::style::text_metrics::width(title, STRIP_LABEL_SIZE, false).ceil()
         + STRIP_LABEL_PAD
 }
 
@@ -1254,7 +1244,9 @@ pub fn strip_hit(y: f32, layout: &[StripGroup]) -> StripHit {
             // The tab boundary nearest the pointer.
             let index = (0..=g.cells.len())
                 .min_by(|&a, &b| {
-                    (g.cell_top(a) - y).abs().total_cmp(&(g.cell_top(b) - y).abs())
+                    (g.cell_top(a) - y)
+                        .abs()
+                        .total_cmp(&(g.cell_top(b) - y).abs())
                 })
                 .unwrap_or(0);
             return StripHit::Join {
@@ -1386,11 +1378,14 @@ pub fn detach_button<'a>(id: PanelId, tip: tooltip::Position) -> Element<'a, Mes
     .on_press(Message::Dock(DockMsg::Detach(id)))
     .style(button::subtle)
     .padding([3, 5]);
-    let detach =
-        container(detach).id(iced::widget::Id::new(crate::ui::modal::DETACH_BUTTON_ID));
-    tooltip(detach, text(crate::t!("Open in its own window")).size(10), tip)
-        .gap(4)
-        .into()
+    let detach = container(detach).id(iced::widget::Id::new(crate::ui::modal::DETACH_BUTTON_ID));
+    tooltip(
+        detach,
+        text(crate::t!("Open in its own window")).size(10),
+        tip,
+    )
+    .gap(4)
+    .into()
 }
 
 pub fn close_button<'a>(id: PanelId, tip: tooltip::Position) -> Element<'a, Message> {
@@ -1804,10 +1799,8 @@ mod tests {
     #[test]
     fn strip_hit_maps_dividers_icons_and_the_end() {
         // Two groups: three icons, then one.
-        let (layout, plus_top) = strip_layout(&[
-            (0, vec![STRIP_CELL_H; 3]),
-            (2, vec![STRIP_CELL_H]),
-        ]);
+        let (layout, plus_top) =
+            strip_layout(&[(0, vec![STRIP_CELL_H; 3]), (2, vec![STRIP_CELL_H])]);
         let g0 = layout[0].clone();
         let g1 = layout[1].clone();
         assert_eq!(g0.icons_top, STRIP_PAD);

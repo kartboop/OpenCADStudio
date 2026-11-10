@@ -19,7 +19,7 @@ use iced::{Background, Border, Color, Element, Fill, Length, Padding, Theme};
 
 use crate::app::Message;
 use crate::modules::{CadModule, IconKind, RibbonGroup, RibbonItem, ToolDef};
-use crate::plugin::all_ribbon_modules;
+use crate::modules::registry::all_modules as all_ribbon_modules;
 use crate::ui::properties::{LinetypeItem, linetype_display_name, lw_options};
 
 mod draw_panel;

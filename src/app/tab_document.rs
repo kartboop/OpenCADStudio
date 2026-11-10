@@ -169,12 +169,6 @@ pub(super) struct DocumentTab {
     /// Monotonic committed-edit/undo/redo revision. Background save completion
     /// uses it with scene epochs so an older snapshot never clears newer work.
     pub(super) edit_revision: u64,
-    /// A whole document replaced this tab's content (file open, template new,
-    /// system open) and native plugins have not been told yet: the
-    /// message boundary (`OpenCADStudio::notify_plugins_document_opened`,
-    /// API v9) dispatches `DocumentOpened` once and clears it, so edits and
-    /// switching between tabs never announce the same load again.
-    pub(super) document_opened_pending: bool,
     pub(super) tab_title: String,
     pub(super) properties: PropertiesPanel,
     pub(super) layers: LayerPanel,
@@ -200,8 +194,10 @@ pub(super) struct DocumentTab {
     pub(super) last_matchprop_src: document::Handle,
     /// Follow-up command for a Parameter Set macro after parameter placement.
     pub(super) pending_parameter_set_follow_up: Option<&'static str>,
-    pub(super) pending_xy_box_set: Option<(document::Handle, crate::scene::block_actions::Kind, u8)>,
-    pub(super) pending_action_pair: Option<(document::Handle, crate::scene::block_actions::Kind, u8)>,
+    pub(super) pending_xy_box_set:
+        Option<(document::Handle, crate::scene::block_actions::Kind, u8)>,
+    pub(super) pending_action_pair:
+        Option<(document::Handle, crate::scene::block_actions::Kind, u8)>,
     /// The definition as it stood when a box or pair Parameter Set began, plus
     /// the dirty flag it carried, so a cancelled set takes back the parameter
     /// it placed and leaves the drawing as unsaved as it found it.
@@ -238,36 +234,6 @@ pub(super) struct DocumentTab {
     /// GROUPDISPLAYMODE 2: the box (min, max corners) round each group
     /// picked whole.
     pub(super) group_boxes: Vec<[glam::DVec3; 2]>,
-    /// Plugin-declared custom grip points for this tab (API v11): session
-    /// display state only — never persisted, never host-interpreted.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) plugin_grips: crate::plugin::grip_points::PluginGripStore,
-    /// Plugin-declared entity class registry (API v14): tab-scoped
-    /// display-session state — entries die with their plugin (re-declared
-    /// per load) and are never persisted; the staged instances stamp XDATA
-    /// identity keys + record linkages instead.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) plugin_classes: crate::plugin::plugin_classes::PluginClassStore,
-    /// DIRTY REGION accumulation (API v13): the identity set of what plugin
-    /// and built-in paths changed since the previous boundary notification —
-    /// `DocumentChangedRegions` carries it so boundary work is O(changed),
-    /// not O(store). Cleared at each boundary; over the cap the sets
-    /// degrade to empty (an honest full-walk signal).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) plugin_dirty_entities: rustc_hash::FxHashSet<document::Handle>,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) plugin_dirty_records: rustc_hash::FxHashSet<(document::Handle, String)>,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) plugin_dirty_overflow: bool,
-    /// Geometry epoch the last region set was published at; a plugin write
-    /// starting from another epoch means something else changed the drawing
-    /// in between, so the sets degrade to empty.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) plugin_dirty_epoch: u64,
-    /// The active custom-grip drag, if any (at most one; rides the same
-    /// drag/active-command lifecycle as built-in grip drags).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) active_plugin_grip: Option<crate::plugin::grip_points::ActivePluginGrip>,
     /// Shift-selected grips, keyed by entity and object-local grip id.
     pub(super) hot_grips: rustc_hash::FxHashSet<(Handle, usize)>,
     /// Grip-mode "Copy" toggle (context menu): each grip placement leaves the
@@ -321,8 +287,6 @@ pub(super) struct DocumentTab {
     pub(super) props_asym_scale: std::collections::HashSet<u64>,
     /// OLE objects' scale base and aspect lock, by handle.
     pub(super) ole_frames: std::collections::HashMap<u64, crate::entities::ole2frame::FrameState>,
-    /// Node graph shown by the command line's graph button.
-    pub(super) graph: crate::ui::node_graph::Graph,
     /// Currently active UCS. `None` means WCS (identity transform).
     pub(super) active_ucs: Option<Ucs>,
     /// Open sketch, if CREATESKETCH is in effect. `None` is the normal
@@ -441,61 +405,6 @@ impl DocumentTab {
                 crate::scene::parametric_constraints::ParametricScope::Block(session.br_handle)
             }
             None => crate::scene::parametric_constraints::ParametricScope::ModelSpace,
-        }
-    }
-
-    /// Record one entity a plugin write touched (API v13 dirty regions).
-    /// `epoch_before` is the geometry epoch before that write.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) fn mark_plugin_entity_dirty(&mut self, handle: document::Handle, epoch_before: u64) {
-        if !self.plugin_dirty_degraded(epoch_before) {
-            self.plugin_dirty_entities.insert(handle);
-        }
-    }
-
-    /// Record one (entity, app) XDATA/XRecord touch (API v13 dirty regions).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) fn mark_plugin_record_dirty(
-        &mut self,
-        handle: document::Handle,
-        app: String,
-        epoch_before: u64,
-    ) {
-        if !self.plugin_dirty_degraded(epoch_before) {
-            self.plugin_dirty_records.insert((handle, app));
-        }
-    }
-
-    /// Degrade the sets to "walk everything" when they can no longer be
-    /// complete: over the cap, or when the drawing changed outside plugin
-    /// writes since the last publish.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    fn plugin_dirty_degraded(&mut self, epoch_before: u64) -> bool {
-        const DIRTY_CAP: usize = 10_000;
-        if epoch_before != self.plugin_dirty_epoch
-            || self.plugin_dirty_entities.len() + self.plugin_dirty_records.len() >= DIRTY_CAP
-        {
-            self.plugin_dirty_overflow = true;
-            self.plugin_dirty_entities.clear();
-            self.plugin_dirty_records.clear();
-        }
-        self.plugin_dirty_overflow
-    }
-
-    /// Take the region sets for a boundary publish at the current epoch;
-    /// empty sets ("walk everything") when degraded.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(super) fn take_plugin_dirty(
-        &mut self,
-    ) -> (Vec<document::Handle>, Vec<(document::Handle, String)>) {
-        let entities = std::mem::take(&mut self.plugin_dirty_entities);
-        let records = std::mem::take(&mut self.plugin_dirty_records);
-        let degraded = std::mem::replace(&mut self.plugin_dirty_overflow, false);
-        self.plugin_dirty_epoch = self.scene.geometry_epoch;
-        if degraded {
-            (Vec::new(), Vec::new())
-        } else {
-            (entities.into_iter().collect(), records.into_iter().collect())
         }
     }
 
@@ -697,7 +606,8 @@ impl DocumentTab {
                     false,
                 ),
             };
-            if let Some(document::EntityType::Viewport(vp)) = self.scene.document.get_entity_mut(h) {
+            if let Some(document::EntityType::Viewport(vp)) = self.scene.document.get_entity_mut(h)
+            {
                 vp.ucs_origin = o;
                 vp.ucs_x_axis = x;
                 vp.ucs_y_axis = y;
@@ -806,7 +716,6 @@ impl DocumentTab {
             recovery_save_as_required: false,
             ifccad_alpha_acknowledged: false,
             edit_revision: 0,
-            document_opened_pending: true,
             prev_selection: Vec::new(),
             tab_title: format!("Drawing{}", n),
             properties: PropertiesPanel::empty(),
@@ -831,16 +740,6 @@ impl DocumentTab {
             selected_grip_handles: vec![],
             drag_start_grips: None,
             group_boxes: vec![],
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_grips: Default::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            plugin_classes: Default::default(),
-            plugin_dirty_entities: Default::default(),
-            plugin_dirty_records: Default::default(),
-            plugin_dirty_overflow: false,
-            plugin_dirty_epoch: 0,
-            #[cfg(not(target_arch = "wasm32"))]
-            active_plugin_grip: None,
             hot_grips: rustc_hash::FxHashSet::default(),
             grip_copy: false,
             grip_base_pending: false,
@@ -867,7 +766,6 @@ impl DocumentTab {
             active_layer: "0".to_string(),
             props_asym_scale: std::collections::HashSet::new(),
             ole_frames: std::collections::HashMap::new(),
-            graph: Default::default(),
             active_ucs: None,
             sketch_session: None,
             sketch_count: 0,
@@ -915,16 +813,10 @@ impl DocumentTab {
         t
     }
 
-    /// A whole document just replaced this tab's content (file open, template
-    /// new, system open): the next message boundary announces
-    /// `DocumentOpened` once for this load (API v9). Call after the document
-    /// and its derived caches have settled.
+    /// Reset document-local placement state after replacing this tab's content.
     pub(super) fn note_document_loaded(&mut self) {
-        // The document this tab's identity remembers a placed position in is
-        // gone, and its coordinates are not the new document's.
         crate::modules::draw::draw::attdef::session().forget_place_of(self.id);
         crate::modules::annotate::text::forget_place_of(self.id);
-        self.document_opened_pending = true;
     }
 
     pub(super) fn tab_display_name(&self) -> String {
@@ -968,7 +860,11 @@ impl HistoryLabel {
     }
 
     pub(super) fn formatted(source: String, attribute: &'static str, value: Self) -> Self {
-        Self::Formatted { source, attribute, value: Box::new(value) }
+        Self::Formatted {
+            source,
+            attribute,
+            value: Box::new(value),
+        }
     }
 
     fn display_with<'a>(
@@ -979,17 +875,20 @@ impl HistoryLabel {
         match self {
             Self::Literal(value) => std::borrow::Cow::Borrowed(value),
             Self::Message(source) => translate(source),
-            Self::Formatted { source, attribute, value } => {
-                format(attribute, &value.display_with(translate, format))
-                    .map(std::borrow::Cow::Owned)
-                    .unwrap_or_else(|| std::borrow::Cow::Borrowed(source.as_str()))
-            }
+            Self::Formatted {
+                source,
+                attribute,
+                value,
+            } => format(attribute, &value.display_with(translate, format))
+                .map(std::borrow::Cow::Owned)
+                .unwrap_or_else(|| std::borrow::Cow::Borrowed(source.as_str())),
         }
     }
 
     fn estimated_bytes(&self) -> usize {
         match self {
-            Self::Formatted { source, value, .. } => source.len()
+            Self::Formatted { source, value, .. } => source
+                .len()
                 .saturating_add(std::mem::size_of::<Self>())
                 .saturating_add(value.estimated_bytes()),
             _ => self.as_str().len(),
@@ -997,11 +896,17 @@ impl HistoryLabel {
     }
 
     pub(super) fn display(&self) -> std::borrow::Cow<'_, str> {
-        self.display_with(&|source| crate::i18n::translate(source), &|attribute, value| {
-            crate::i18n::format_attribute("block-formatted-history", attribute, &[("label", value)])
-        })
+        self.display_with(
+            &|source| crate::i18n::translate(source),
+            &|attribute, value| {
+                crate::i18n::format_attribute(
+                    "block-formatted-history",
+                    attribute,
+                    &[("label", value)],
+                )
+            },
+        )
     }
-
 }
 
 impl From<String> for HistoryLabel {
@@ -1170,9 +1075,6 @@ pub(super) struct DeltaSnapshot {
     /// the entity it belongs to (e.g. a plugin scope that both erases and
     /// re-designates). Almost always empty.
     pub(super) reference_designations: Vec<ReferenceDesignationDelta>,
-    /// The node graph before and after a graph evaluation, which edits the
-    /// drawing from the graph's inputs (#2731).
-    pub(super) graph: Option<Box<(crate::ui::node_graph::GraphUndo, crate::ui::node_graph::GraphUndo)>>,
     /// Drawing-wide parameter table changed by this transaction.
     pub(super) named_parameters: Option<(
         crate::scene::named_parameters::ParameterTable,
@@ -1297,10 +1199,7 @@ pub(super) struct PendingHistorySnapshot {
     /// A plugin's undo group: message boundaries leave it open until the
     /// plugin ends it or the user runs a command.
     pub(super) held: bool,
-    /// The node graph when a graph evaluation opened this step.
-    pub(super) graph_before: Option<crate::ui::node_graph::GraphUndo>,
 }
-
 
 #[cfg(test)]
 mod history_label_tests {
@@ -1309,29 +1208,48 @@ mod history_label_tests {
 
     #[test]
     fn history_literal_labels_bypass_translation_even_when_they_match_catalog_sources() {
-        for value in ["LINE", "PLUGIN: custom", "Revert", "Edit construction geometry"] {
+        for value in [
+            "LINE",
+            "PLUGIN: custom",
+            "Revert",
+            "Edit construction geometry",
+        ] {
             let label = HistoryLabel::from(value);
-            assert_eq!(label.display_with(&|_| panic!("literal label was translated"), &|_, _| panic!("literal label was formatted")), value);
+            assert_eq!(
+                label.display_with(&|_| panic!("literal label was translated"), &|_, _| panic!(
+                    "literal label was formatted"
+                )),
+                value
+            );
             assert_eq!(label.as_str(), value);
         }
     }
 
     #[test]
     fn formatted_history_retains_source_and_only_translates_marked_arguments() {
-        for value in [HistoryLabel::from("Revert"), HistoryLabel::Message("Revert")] {
+        for value in [
+            HistoryLabel::from("Revert"),
+            HistoryLabel::Message("Revert"),
+        ] {
             let message = matches!(value, HistoryLabel::Message(_));
             let label = HistoryLabel::formatted("Edit block Revert".into(), "edit-block", value);
-            let rendered = label.display_with(&|source| {
-                assert_eq!(source, "Revert");
-                Cow::Borrowed("translated kind")
-            }, &|attribute, value| {
-                assert_eq!(attribute, "edit-block");
-                assert_eq!(value, if message { "translated kind" } else { "Revert" });
-                Some(format!("localized template: {value}"))
-            });
+            let rendered = label.display_with(
+                &|source| {
+                    assert_eq!(source, "Revert");
+                    Cow::Borrowed("translated kind")
+                },
+                &|attribute, value| {
+                    assert_eq!(attribute, "edit-block");
+                    assert_eq!(value, if message { "translated kind" } else { "Revert" });
+                    Some(format!("localized template: {value}"))
+                },
+            );
             assert!(rendered.starts_with("localized template:"));
             assert_eq!(label.as_str(), "Edit block Revert");
-            assert_eq!(label.display_with(&|source| Cow::Borrowed(source), &|_, _| None), label.as_str());
+            assert_eq!(
+                label.display_with(&|source| Cow::Borrowed(source), &|_, _| None),
+                label.as_str()
+            );
         }
     }
 
@@ -1339,11 +1257,20 @@ mod history_label_tests {
     fn history_message_labels_render_again_without_mutating_the_stored_source() {
         let label = HistoryLabel::Message("Edit construction geometry");
         let retained = label.clone();
-        for translated in ["Modifier la géométrie de construction", "تحرير الهندسة الإنشائية"] {
-            assert_eq!(retained.display_with(&|source| {
-                assert_eq!(source, "Edit construction geometry");
-                Cow::Owned(translated.to_owned())
-            }, &|_, _| panic!("plain message was formatted")), translated);
+        for translated in [
+            "Modifier la géométrie de construction",
+            "تحرير الهندسة الإنشائية",
+        ] {
+            assert_eq!(
+                retained.display_with(
+                    &|source| {
+                        assert_eq!(source, "Edit construction geometry");
+                        Cow::Owned(translated.to_owned())
+                    },
+                    &|_, _| panic!("plain message was formatted")
+                ),
+                translated
+            );
             assert_eq!(retained.as_str(), "Edit construction geometry");
         }
     }

@@ -1,13 +1,11 @@
 //! `file` arms and helpers, split out of the original `update.rs` (#mechanical decomposition).
 
 #![allow(unused_imports)]
-use crate::io::plot_style::PlotStyleTableExt as _;
 use super::util::*;
 use super::{format_size, VIEWCUBE_HIT_SIZE};
-use crate::app::helpers::{
-    parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind,
-};
+use crate::app::helpers::{parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind};
 use crate::app::{Message, OpenCADStudio, POLY_START_DELAY_MS};
+use crate::io::plot_style::PlotStyleTableExt as _;
 use crate::modules::ModuleEvent;
 use crate::scene::model::object::GripApply;
 use crate::scene::pick::grip::{find_hit_grip, find_hit_grip_paper, find_hit_grip_rte, GripEdit};
@@ -675,10 +673,12 @@ fn plot_entity_layers(
     hatches: &[crate::scene::model::hatch_model::HatchModel],
     wipeouts: &[crate::scene::model::hatch_model::HatchModel],
 ) -> std::collections::HashMap<document::Handle, String> {
-    let names = wires
-        .iter()
-        .map(|wire| wire.name.as_str())
-        .chain(hatches.iter().chain(wipeouts).map(|hatch| hatch.name.as_str()));
+    let names = wires.iter().map(|wire| wire.name.as_str()).chain(
+        hatches
+            .iter()
+            .chain(wipeouts)
+            .map(|hatch| hatch.name.as_str()),
+    );
     let mut layers = std::collections::HashMap::new();
     for name in names {
         let Some(handle) = crate::scene::Scene::handle_from_wire_name(name) else {
@@ -882,8 +882,7 @@ impl OpenCADStudio {
             #[cfg(not(target_arch = "wasm32"))]
             plot_styles_folder: crate::io::plot_style::plot_styles_folder()
                 .map(|p| p.display().to_string()),
-            support_folder: crate::io::font_repo::support_folder()
-                .map(|p| p.display().to_string()),
+            support_folder: crate::io::font_repo::support_folder().map(|p| p.display().to_string()),
             #[cfg(target_arch = "wasm32")]
             fonts_folder: None,
             #[cfg(target_arch = "wasm32")]
@@ -894,7 +893,6 @@ impl OpenCADStudio {
             ucs_view: crate::modules::view::view_cmd::ucs_view(),
             layout_create_viewport: crate::scene::layout_create_viewport(),
             pdf_shx_text: crate::modules::insert::pdf_shx_text::settings(),
-            dgn_import: crate::modules::insert::dgn_import::settings(),
             ncopy_bind: self.ncopy_bind,
             cursor_type: self.cursor_type,
             crosshair_color: self.crosshair_color,
@@ -909,14 +907,7 @@ impl OpenCADStudio {
             check_missing_fonts: self.check_missing_fonts,
             font_source_url: self.font_source_url.clone(),
             qnew_template: self.qnew_template.clone(),
-            donation_prompt_version: self.donation_prompt_version.clone(),
             gpu_warning_silenced: self.gpu_warning_silenced.clone(),
-            disabled_plugins: {
-                let mut v: Vec<String> = self.disabled_plugins.iter().cloned().collect();
-                v.sort();
-                v
-            },
-            plugin_repos: self.plugin_repos.clone(),
             literal_spaces: self.command_line.literal_spaces,
             command_history_height: self.command_line.history_height,
             osmode: crate::app::settings::osmode_from_snaps(
@@ -1006,7 +997,10 @@ impl OpenCADStudio {
         self.cursor_size = s.cursor_size.clamp(1, 100);
         self.pick_box = s.pick_box.clamp(0, 50);
         self.snapper.osnap_radius_px = if s.aperture.is_finite() {
-            s.aperture.clamp(crate::snap::MIN_OSNAP_RADIUS_PX, crate::snap::MAX_OSNAP_RADIUS_PX)
+            s.aperture.clamp(
+                crate::snap::MIN_OSNAP_RADIUS_PX,
+                crate::snap::MAX_OSNAP_RADIUS_PX,
+            )
         } else {
             crate::snap::DEFAULT_OSNAP_RADIUS_PX
         };
@@ -1106,7 +1100,6 @@ impl OpenCADStudio {
         crate::modules::view::view_cmd::set_ucs_view(s.ucs_view);
         crate::scene::set_layout_create_viewport(s.layout_create_viewport);
         crate::modules::insert::pdf_shx_text::set_settings(s.pdf_shx_text.clone());
-        crate::modules::insert::dgn_import::set_settings(s.dgn_import);
         self.ncopy_bind = s.ncopy_bind;
         self.cursor_type = s.cursor_type;
         self.crosshair_color = s.crosshair_color;
@@ -1144,10 +1137,7 @@ impl OpenCADStudio {
         self.font_source_url = s.font_source_url.clone();
         self.qnew_template = s.qnew_template.clone();
         self.font_source_input = s.font_source_url.clone();
-        self.donation_prompt_version = s.donation_prompt_version.clone();
         self.gpu_warning_silenced = s.gpu_warning_silenced.clone();
-        self.disabled_plugins = s.disabled_plugins.iter().cloned().collect();
-        self.plugin_repos = s.plugin_repos.clone();
         self.command_line.literal_spaces = s.literal_spaces;
         self.command_line.history_height = if s.command_history_height.is_finite() {
             s.command_history_height.clamp(
@@ -1250,7 +1240,6 @@ impl OpenCADStudio {
         for idx in 0..self.tabs.len() {
             self.apply_display_defaults(idx);
         }
-        self.rebuild_ribbon_modules();
     }
 
     pub(crate) fn record_block_insert(&mut self, name: &str) {
@@ -1426,116 +1415,6 @@ impl OpenCADStudio {
         }
     }
 
-    /// Rebuild the ribbon's tab list from the registry, dropping the tabs of any
-    /// disabled plugins. Call after `disabled_plugins` changes.
-    pub(in crate::app) fn rebuild_ribbon_modules(&mut self) {
-        let modules = crate::plugin::ribbon_modules_enabled(&self.disabled_plugins);
-        self.ribbon.set_modules(modules);
-        // Refresh the command-line autocomplete pool so a newly enabled plugin's
-        // commands become typeable (and a disabled one's drop out). This runs on
-        // startup load, settings reload, and every enable/disable toggle (#272).
-        let mut cmds = crate::plugin::plugin_command_names(&self.disabled_plugins);
-        for state in self.plugin_panels.values() {
-            if let Some(ref c) = state.def.command {
-                let cu = c.to_uppercase();
-                if !cmds.contains(&cu) {
-                    cmds.push(cu);
-                }
-            }
-            let id_u = state.def.id.to_uppercase();
-            if !cmds.contains(&id_u) {
-                cmds.push(id_u);
-            }
-        }
-        self.command_line.dynamic_commands = cmds;
-    }
-
-    /// Snapshot of disabled plugin ids — lets the registry skip them while it
-    /// holds a `&mut` borrow of the app via `HostSession`.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn disabled_plugin_ids(&self) -> rustc_hash::FxHashSet<String> {
-        self.disabled_plugins.clone()
-    }
-
-    /// Background task: fetch the curated plugin registry.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::app) fn fetch_registry_task(&self) -> Task<Message> {
-        Task::perform(
-            async { crate::plugin::marketplace::fetch_registry() },
-            Message::PluginRegistryFetched,
-        )
-    }
-
-    /// Background task: fetch `owner/repo`'s installable releases and their
-    /// manifest API versions. The fetch runs on its own OS thread because the
-    /// several sequential HTTP requests inside `fetch_release_info` would
-    /// otherwise block the async executor and serialise all repo fetches.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::app) fn fetch_releases_task(&self, repo: String) -> Task<Message> {
-        let label = repo.clone();
-        Task::perform(
-            async move {
-                let (tx, rx) = iced::futures::channel::oneshot::channel();
-                std::thread::spawn(move || {
-                    let result = crate::plugin::marketplace::fetch_release_info(&repo);
-                    let _ = tx.send(result);
-                });
-                rx.await
-                    .unwrap_or_else(|_| Err("release fetch thread died".into()))
-            },
-            move |res| Message::PluginReleasesFetched(label, res),
-        )
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(in crate::app) fn fetch_releases_task(&self, repo: String) -> Task<Message> {
-        Task::done(Message::PluginReleasesFetched(
-            repo,
-            Err("External plugins are available in the desktop app.".to_string()),
-        ))
-    }
-
-    /// Background task: fetch a repository README from its default branch.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::app) fn fetch_plugin_readme_task(&self, repo: String) -> Task<Message> {
-        let label = repo.clone();
-        Task::perform(
-            async move { crate::plugin::marketplace::fetch_readme(&repo) },
-            move |result| Message::PluginReadmeFetched(label, result),
-        )
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(in crate::app) fn fetch_plugin_readme_task(&self, repo: String) -> Task<Message> {
-        Task::done(Message::PluginReadmeFetched(
-            repo,
-            Err("Plugin details are available in the desktop app.".to_string()),
-        ))
-    }
-
-    /// Background task: download and install the `tag` release of `owner/repo`.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::app) fn install_task(&self, repo: String, tag: String) -> Task<Message> {
-        Task::perform(
-            async move {
-                let releases = crate::plugin::marketplace::fetch_releases(&repo)?;
-                let rel = releases
-                    .into_iter()
-                    .find(|r| r.tag == tag)
-                    .ok_or_else(|| format!("release {tag} not found"))?;
-                crate::plugin::marketplace::install(&rel, &repo)
-            },
-            Message::PluginInstalled,
-        )
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(in crate::app) fn install_task(&self, _repo: String, _tag: String) -> Task<Message> {
-        Task::done(Message::PluginInstalled(Err(
-            "External plugins are available in the desktop app.".to_string(),
-        )))
-    }
-
     /// Gather the full persisted config (all sections) from live app state.
     pub(in crate::app) fn current_config(&self) -> crate::app::config::AppConfig {
         crate::app::config::AppConfig {
@@ -1549,9 +1428,6 @@ impl OpenCADStudio {
                     .collect(),
                 limit: self.recent_limit,
                 view: self.recent_view,
-            },
-            start: crate::app::config::StartConfig {
-                section: self.start_section,
             },
             statusbar: self.statusbar_config.clone(),
             dock: {
@@ -1629,7 +1505,6 @@ impl OpenCADStudio {
         self.recent_view = cfg.recent.view;
         // Thumbnails are decoded by a background task queued at boot
         // (`refresh_recent_thumbs`) — never here on the boot path.
-        self.start_section = cfg.start.section;
         self.statusbar_config = cfg.statusbar;
         let mut dock = cfg.dock;
         dock.ensure_settings();
@@ -1642,8 +1517,7 @@ impl OpenCADStudio {
             self.sync_command_history_panel();
         }
         // The pallets and tabs come back as they were left (#2616).
-        self.show_layers =
-            cfg.show_layers && self.dock.is_placed(crate::ui::dock::PanelId::Layers);
+        self.show_layers = cfg.show_layers && self.dock.is_placed(crate::ui::dock::PanelId::Layers);
         self.show_file_tabs = cfg.show_file_tabs;
         self.ribbon.set_file_tabs(self.show_file_tabs);
         self.show_layout_tabs = cfg.show_layout_tabs;
@@ -1673,7 +1547,14 @@ impl OpenCADStudio {
             .entry("SHIFT+F12".to_string())
             .or_insert_with(|| "QUADTOGGLE".to_string());
         self.shortcut_bindings
-            .entry(if cfg!(target_os = "macos") { "CMD+R" } else { "CTRL+R" }.to_string())
+            .entry(
+                if cfg!(target_os = "macos") {
+                    "CMD+R"
+                } else {
+                    "CTRL+R"
+                }
+                .to_string(),
+            )
             .or_insert_with(|| "NEXTVIEWPORT".to_string());
         for (key, action) in crate::app::shortcuts::PLATFORM_BINDINGS {
             self.shortcut_bindings
@@ -2234,7 +2115,11 @@ impl OpenCADStudio {
             .push_output(crate::tf!("Opened \"{name}\" — {entity_count} entities").as_ref());
         // What a converter could not carry over is a warning: the drawing
         // opened and is usable.
-        for diagnostic in caches.read_stats.iter().flat_map(|stats| &stats.diagnostics) {
+        for diagnostic in caches
+            .read_stats
+            .iter()
+            .flat_map(|stats| &stats.diagnostics)
+        {
             if diagnostic.code == ocs_save::CONVERSION_LOSS {
                 self.command_line.push_warning(&diagnostic.message);
             }
@@ -2812,10 +2697,14 @@ impl OpenCADStudio {
         // Collect per-document alpha consent before capturing or writing any batch output.
         if let Some(tab_id) = self.tabs.iter().enumerate().find_map(|(i, tab)| {
             let ext = tab.current_path.as_ref()?.extension()?.to_str()?;
-            (tab.dirty && !tab.is_start && tab.block_test.is_none()
-                && self.needs_ifccad_alpha_consent(i, ext)).then_some(tab.id)
+            (tab.dirty
+                && !tab.is_start
+                && tab.block_test.is_none()
+                && self.needs_ifccad_alpha_consent(i, ext))
+            .then_some(tab.id)
         }) {
-            self.pending_ifccad_alpha_save = Some(crate::app::PendingConversionSave::WebSaveAll { tab_id });
+            self.pending_ifccad_alpha_save =
+                Some(crate::app::PendingConversionSave::WebSaveAll { tab_id });
             self.active_modal = Some(crate::app::ModalKind::IfccadAlphaWarning);
             return Task::none();
         }
@@ -2944,102 +2833,6 @@ impl OpenCADStudio {
             )
             .as_ref(),
         );
-    }
-
-    pub(super) fn on_stl_export_path_some(&mut self, path: std::path::PathBuf) -> Task<Message> {
-        // Re-build STL bytes (we can't easily pass them through the message).
-        let i = self.active_tab;
-        // STL gets the highest-resolution LOD (slot 0) so the
-        // exported geometry isn't downgraded by the view-dependent
-        // mesh LOD ladder used for rendering.
-        let meshes: Vec<crate::scene::model::mesh_model::MeshModel> = self.tabs[i]
-            .scene
-            .meshes
-            .values()
-            .filter_map(|s| s.lods.first().cloned())
-            .collect();
-        let worker_path = path.clone();
-        background_task(
-            crate::t!("STL export"),
-            move || {
-                let mesh_refs: Vec<_> = meshes.iter().collect();
-                let bytes = crate::io::stl::build_stl(&mesh_refs)
-                    .ok_or_else(|| "no mesh data to export".to_string())?;
-                write_export(&worker_path, &bytes)
-            },
-            move |result| Message::StlExportFinished(path, result),
-        )
-    }
-
-    pub(super) fn on_step_export_path_some(&mut self, path: std::path::PathBuf) -> Task<Message> {
-        let i = self.active_tab;
-        // Export uses LOD 0 (full resolution); see StlExportPath above.
-        let meshes: Vec<crate::scene::model::mesh_model::MeshModel> = self.tabs[i]
-            .scene
-            .meshes
-            .values()
-            .filter_map(|s| s.lods.first().cloned())
-            .collect();
-        let worker_path = path.clone();
-        background_task(
-            crate::t!("STEP export"),
-            move || {
-                let mesh_refs: Vec<_> = meshes.iter().collect();
-                let text = crate::io::step::build_step(&mesh_refs)
-                    .ok_or_else(|| "no mesh data to export".to_string())?;
-                write_export(&worker_path, text.as_bytes())
-            },
-            move |result| Message::StepExportFinished(path, result),
-        )
-    }
-
-    pub(super) fn on_fbx_export_path_some(&mut self, path: std::path::PathBuf) -> Task<Message> {
-        let i = self.active_tab;
-        // Export uses LOD 0 (full resolution); see StlExportPath above.
-        let meshes: Vec<crate::scene::model::mesh_model::MeshModel> = self.tabs[i]
-            .scene
-            .meshes
-            .values()
-            .filter_map(|s| s.lods.first().cloned())
-            .collect();
-        let header = &self.tabs[i].scene.document.header;
-        // Centimetres per drawing unit (INSUNITS); unitless metric drawings
-        // are taken as millimetres, imperial ones as inches.
-        let unit_cm = match header.insertion_units {
-            1 => 2.54,
-            2 => 30.48,
-            4 => 0.1,
-            5 => 1.0,
-            6 => 100.0,
-            14 => 10.0,
-            _ if header.measurement == 1 => 0.1,
-            _ => 2.54,
-        };
-        let worker_path = path.clone();
-        background_task(
-            crate::t!("FBX export"),
-            move || {
-                let mesh_refs: Vec<_> = meshes.iter().collect();
-                let bytes = crate::io::fbx::build_fbx(&mesh_refs, unit_cm)
-                    .ok_or_else(|| "no mesh data to export".to_string())?;
-                write_export(&worker_path, &bytes)
-            },
-            move |result| Message::FbxExportFinished(path, result),
-        )
-    }
-
-    pub(super) fn on_obj_import_path_some(&mut self, path: std::path::PathBuf) -> Task<Message> {
-        let tab_id = self.tabs[self.active_tab].id;
-        let worker_path = path.clone();
-        background_task(
-            crate::t!("OBJ import"),
-            move || {
-                let src = std::fs::read_to_string(&worker_path).map_err(|e| e.to_string())?;
-                crate::io::obj::parse_obj(&src, [0.7, 0.7, 0.85, 1.0])
-                    .ok_or_else(|| "no usable geometry in file".to_string())
-            },
-            move |result| Message::ObjImportFinished(tab_id, path, result),
-        )
     }
 
     pub(in crate::app) fn sync_view_state_for_save(&mut self, i: usize) {
@@ -3206,9 +2999,7 @@ impl OpenCADStudio {
             crate::io::prepare_document_for_save(self.tabs[i].scene.document_for_save(), version);
         let allow_loss = std::mem::take(&mut self.conversion_loss_allowed);
         Task::perform(
-            async move {
-                crate::io::serialize_prepared_document(&prepared, &ext, allow_loss).await
-            },
+            async move { crate::io::serialize_prepared_document(&prepared, &ext, allow_loss).await },
             move |result| Message::WebSaveSerialized {
                 tab_id,
                 filename,
@@ -3511,11 +3302,20 @@ impl OpenCADStudio {
             }
         }
         if purpose != crate::app::SavePurpose::Autosave
-            && self.needs_ifccad_alpha_consent(i, path.extension().and_then(|e| e.to_str()).unwrap_or(""))
+            && self.needs_ifccad_alpha_consent(
+                i,
+                path.extension().and_then(|e| e.to_str()).unwrap_or(""),
+            )
         {
             let save = crate::app::PendingNativeThumbnailSave {
-                tab_id: self.tabs[i].id, path, version, purpose, continuation,
-                set_current_path, check_external_change, allow_conversion_loss,
+                tab_id: self.tabs[i].id,
+                path,
+                version,
+                purpose,
+                continuation,
+                set_current_path,
+                check_external_change,
+                allow_conversion_loss,
             };
             self.pending_ifccad_alpha_save = Some(crate::app::PendingConversionSave::Native(save));
             self.active_modal = Some(crate::app::ModalKind::IfccadAlphaWarning);
@@ -4400,17 +4200,16 @@ impl OpenCADStudio {
                 .as_ref()
                 .and_then(|p| p.parent().map(|d| d.to_path_buf()));
             let default_name = filename;
-            let (filter_label, filter_ext): (&str, &str) = if let Some(converter) =
-                ocs_save::external_format(ext)
-            {
-                (ocs_save::external_format_label(converter), ext)
-            } else if ext.eq_ignore_ascii_case("dxf") {
-                ("DXF Files", "dxf")
-            } else if ext.eq_ignore_ascii_case("dwt") {
-                ("Drawing Template (*.dwt)", "dwt")
-            } else {
-                ("DWG Files", "dwg")
-            };
+            let (filter_label, filter_ext): (&str, &str) =
+                if let Some(converter) = ocs_save::external_format(ext) {
+                    (ocs_save::external_format_label(converter), ext)
+                } else if ext.eq_ignore_ascii_case("dxf") {
+                    ("DXF Files", "dxf")
+                } else if ext.eq_ignore_ascii_case("dwt") {
+                    ("Drawing Template (*.dwt)", "dwt")
+                } else {
+                    ("DWG Files", "dwg")
+                };
             let close = self.close_save_dialog_window();
             let pick = Task::perform(
                 async move {
@@ -4530,7 +4329,10 @@ impl OpenCADStudio {
         if let Some(i) = self.tabs.iter().position(|tab| tab.id == tab_id) {
             if self.needs_ifccad_alpha_consent(i, &ext) {
                 self.pending_ifccad_alpha_save = Some(crate::app::PendingConversionSave::Web {
-                    tab_id, filename, ext, version,
+                    tab_id,
+                    filename,
+                    ext,
+                    version,
                 });
                 self.active_modal = Some(crate::app::ModalKind::IfccadAlphaWarning);
                 return Task::none();
@@ -4752,7 +4554,9 @@ impl OpenCADStudio {
     pub(super) fn on_ifccad_alpha_proceed(&mut self) -> Task<Message> {
         self.active_modal = None;
         let accepted_losses = self.pending_conversion_save.is_some();
-        let pending = self.pending_ifccad_alpha_save.take()
+        let pending = self
+            .pending_ifccad_alpha_save
+            .take()
             .or_else(|| self.pending_conversion_save.take());
         let Some(pending) = pending else {
             return Task::none();
@@ -4776,7 +4580,9 @@ impl OpenCADStudio {
             self.conversion_loss_allowed = accepted_losses || save.allow_conversion_loss;
         }
         #[cfg(target_arch = "wasm32")]
-        if accepted_losses { self.conversion_loss_allowed = true; }
+        if accepted_losses {
+            self.conversion_loss_allowed = true;
+        }
         self.resume_format_save(pending)
     }
 
@@ -4851,7 +4657,9 @@ impl OpenCADStudio {
         // Earlier versions kept the copy beside the drawing.
         let beside = path.with_file_name(format!(
             "{}.ocs-autosave.sv$",
-            path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()
+            path.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
         ));
         let Some(copy) = [self.autosave_target(i), beside].into_iter().find(|copy| {
             modified(copy)
@@ -4860,9 +4668,16 @@ impl OpenCADStudio {
         }) else {
             return;
         };
-        let name = copy.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = copy
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let kept = copy.with_file_name(name.replace(".ocs-autosave.sv$", ".ocs-recovered.sv$"));
-        let file = if kept != copy && std::fs::rename(&copy, &kept).is_ok() { kept } else { copy };
+        let file = if kept != copy && std::fs::rename(&copy, &kept).is_ok() {
+            kept
+        } else {
+            copy
+        };
         self.command_line.push_warning(&crate::tr!(
             "recovery",
             "newer-autosave",
@@ -4898,9 +4713,12 @@ impl OpenCADStudio {
                     .unwrap_or_else(|| "drawing".to_string());
                 // FNV-1a: the same name in every build, so a copy from before
                 // a crash is found after an update.
-                let hash = p.to_string_lossy().bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-                    (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-                });
+                let hash = p
+                    .to_string_lossy()
+                    .bytes()
+                    .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+                    });
                 folder.join(format!("{name}.{:08x}.ocs-autosave.sv$", hash as u32))
             }
             None => {
@@ -5606,8 +5424,7 @@ impl OpenCADStudio {
             ps.flags.use_standard_scale = false;
             ps.scale_numerator = 1.0;
             ps.scale_denominator = page_unit_mm;
-            ps.standard_scale_factor =
-                stored_scale_factor(1.0 / page_unit_mm, ps.paper_units);
+            ps.standard_scale_factor = stored_scale_factor(1.0 / page_unit_mm, ps.paper_units);
         } else if d.fit_to_paper {
             ps.set_scale_to_fit();
             // The commercial application marks fitted plots with the
@@ -5763,7 +5580,8 @@ impl OpenCADStudio {
         } else {
             self.refresh_current_plot_context();
             vec![self.direct_plot_page().ok_or_else(|| {
-                crate::t!("Nothing to plot: model space contains no printable geometry.").into_owned()
+                crate::t!("Nothing to plot: model space contains no printable geometry.")
+                    .into_owned()
             })?]
         };
         let style = self.dialog_plot_style(&self.plot_dialog);
@@ -6462,7 +6280,10 @@ impl OpenCADStudio {
     /// QUICKPRINT / QP — use the current selection's bounding box as the plot
     /// window and export a PDF (drawing folder + name + timestamp) with the
     /// active page setup, no dialog. Model space only. (#325)
-    pub(crate) fn on_quick_print_handles(&mut self, handles: Vec<document::Handle>) -> Task<Message> {
+    pub(crate) fn on_quick_print_handles(
+        &mut self,
+        handles: Vec<document::Handle>,
+    ) -> Task<Message> {
         let i = self.active_tab;
         if self.tabs[i].scene.current_layout != "Model" {
             self.command_line
@@ -6562,10 +6383,16 @@ impl OpenCADStudio {
             (2, Some(dir)) => Some(dir.join("PDF")),
             _ => None,
         };
-        let path = folder.filter(|folder| std::fs::create_dir_all(folder).is_ok()).map(|folder| {
-            let ext = if self.plot_dialog.file_svg { "svg" } else { "pdf" };
-            folder.join(format!("{stem}.{ext}"))
-        });
+        let path = folder
+            .filter(|folder| std::fs::create_dir_all(folder).is_ok())
+            .map(|folder| {
+                let ext = if self.plot_dialog.file_svg {
+                    "svg"
+                } else {
+                    "pdf"
+                };
+                folder.join(format!("{stem}.{ext}"))
+            });
         (stem, path)
     }
 
@@ -7713,9 +7540,7 @@ impl OpenCADStudio {
             // (1000 mm/model unit) next to an imperial 1:1 scale object.
             // Prefer the explicit paper ratio label over an unrelated
             // architectural name that merely happens to have factor 1.
-            d.scale = if d.area == "Layout"
-                && d.scales.iter().any(|(name, _)| name == "1:1")
-            {
+            d.scale = if d.area == "Layout" && d.scales.iter().any(|(name, _)| name == "1:1") {
                 "1:1".to_string()
             } else {
                 scale_name_for_factor(&d.scales, target_factor).unwrap_or_else(|| {
@@ -8242,15 +8067,13 @@ impl OpenCADStudio {
         }
 
         let Ok(screening) = self.ps_screening_buf.trim().parse::<u8>() else {
-            self.command_line.push_error(
-                crate::t!("Screening must be a whole number from 0 to 100.").as_ref(),
-            );
+            self.command_line
+                .push_error(crate::t!("Screening must be a whole number from 0 to 100.").as_ref());
             return Task::none();
         };
         if screening > 100 {
-            self.command_line.push_error(
-                crate::t!("Screening must be a whole number from 0 to 100.").as_ref(),
-            );
+            self.command_line
+                .push_error(crate::t!("Screening must be a whole number from 0 to 100.").as_ref());
             return Task::none();
         }
 
@@ -8353,7 +8176,9 @@ mod plot_paper_tests {
             if k == 2 {
                 crate::entities::hatch::set_background_color(&mut hatch, &Color::Index(1));
             }
-            app.tabs[i].scene.add_entity(document::EntityType::Hatch(Box::new(hatch)));
+            app.tabs[i]
+                .scene
+                .add_entity(document::EntityType::Hatch(Box::new(hatch)));
         }
         let page = app.layout_plot_page();
         let colors: Vec<_> = page.content.hatches.iter().map(|h| h.color).collect();
@@ -8392,7 +8217,10 @@ mod plot_paper_tests {
             let page = app.layout_plot_page();
             let named = |handle: document::Handle| {
                 let name = handle.value().to_string();
-                page.content.wires.iter().filter(move |wire| wire.name == name)
+                page.content
+                    .wires
+                    .iter()
+                    .filter(move |wire| wire.name == name)
             };
             assert!(
                 named(solid).any(|wire| wire.points.iter().any(|p| p[0].is_finite())),
@@ -8790,7 +8618,10 @@ mod plot_paper_tests {
         viewport.common.layer = "VPB".into();
         let handle = scene
             .document
-            .add_entity_to_layout(document::EntityType::Viewport(Box::new(viewport)), "Layout1")
+            .add_entity_to_layout(
+                document::EntityType::Viewport(Box::new(viewport)),
+                "Layout1",
+            )
             .unwrap();
         scene.notify_viewport_changed(handle);
         scene.bump_entities(&[(handle, crate::scene::ChangeKind::Added)]);
@@ -10228,8 +10059,10 @@ mod mtext_save_loss_tests {
         app.tabs
             .push(crate::app::tab_document::DocumentTab::new_drawing(1));
         app.active_tab = 1;
-        let mut text =
-            document::entities::MText::with_value("rich", document::types::Vector3::new(0., 0., 0.));
+        let mut text = document::entities::MText::with_value(
+            "rich",
+            document::types::Vector3::new(0., 0., 0.),
+        );
         text.column_data.column_type = 1;
         text.column_data.column_count = 2;
         text.rectangle_height = Some(30.);

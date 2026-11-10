@@ -136,7 +136,6 @@ pub enum MovableFolder {
 pub struct Folders {
     pub config: Option<String>,
     pub plot_styles: Option<String>,
-    pub plugins: Option<String>,
     pub autosave: Option<String>,
     /// Where `.shx` / `.ttf` fonts dropped in by the user (or downloaded for
     /// a drawing) are found.
@@ -388,29 +387,15 @@ pub fn view_window<'a>(
             text(crate::tr!("options", "language-label"))
                 .size(12)
                 .width(150),
-            crate::ui::dropdown_list::pick_list(selected_language, language_options, |choice| choice
-                .label
-                .clone(),)
+            crate::ui::dropdown_list::pick_list(selected_language, language_options, |choice| {
+                choice.label.clone()
+            },)
             .on_select(|choice| Message::LanguageChanged(choice.value))
             .width(sizing.width),
         ]
         .spacing(12)
         .align_y(iced::Center),
         Space::new().height(24),
-        text(crate::t!("Applications")).size(15),
-        Space::new().height(10),
-        row![
-            text(crate::t!("Installed plugins and their sources"))
-                .size(12)
-                .width(Fill),
-            button(text(crate::t!("Plugins…")).size(11))
-                .on_press(Message::PluginManagerOpen)
-                .padding([4, 10])
-                .style(button::secondary),
-        ]
-        .spacing(10)
-        .align_y(iced::Center),
-        Space::new().height(10),
         row![
             text(crate::t!("Keyboard shortcuts")).size(12).width(Fill),
             button(text(crate::t!("Keyboard Shortcuts…")).size(11))
@@ -678,9 +663,11 @@ pub fn view_window<'a>(
             text(crate::tr!("options", "theme-label"))
                 .size(12)
                 .width(150),
-            crate::ui::dropdown_list::pick_list(selected_theme, theme_options, |choice| choice.label.clone(),)
-                .on_select(|choice| Message::OptionsThemeChanged(choice.value))
-                .width(sizing.width),
+            crate::ui::dropdown_list::pick_list(selected_theme, theme_options, |choice| choice
+                .label
+                .clone(),)
+            .on_select(|choice| Message::OptionsThemeChanged(choice.value))
+            .width(sizing.width),
         ]
         .spacing(12)
         .align_y(iced::Center),
@@ -722,9 +709,11 @@ pub fn view_window<'a>(
         Space::new().height(10),
         row![
             text(crate::t!("Canvas mode")).size(12).width(140),
-            crate::ui::dropdown_list::pick_list(selected_mode, mode_options, |choice| choice.label.clone(),)
-                .on_select(|choice| Message::ModelSpaceModeChanged(choice.value))
-                .width(Fill),
+            crate::ui::dropdown_list::pick_list(selected_mode, mode_options, |choice| choice
+                .label
+                .clone(),)
+            .on_select(|choice| Message::ModelSpaceModeChanged(choice.value))
+            .width(Fill),
         ]
         .spacing(10)
         .align_y(iced::Center),
@@ -1553,7 +1542,6 @@ pub fn view_window<'a>(
         ))
         .size(11)
         .width(sizing.width),
-                
         Space::new().height(24),
         // ── Quad cursor menu ─────────────────────────────────────────────
         // docs/quad-menu.md §3.7: the master switch, the four QUADDISPLAY
@@ -2080,8 +2068,6 @@ pub fn view_window<'a>(
             folders.plot_styles.clone(),
             movable(MovableFolder::PlotStyles, folders.plot_styles_moved),
         ),
-        Space::new().height(12),
-        folder_row(crate::t!("Plugins"), folders.plugins.clone(), None),
         Space::new().height(12),
         folder_row(crate::t!("Autosave files"), folders.autosave.clone(), None),
         Space::new().height(12),

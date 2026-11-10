@@ -11,9 +11,7 @@ target = "web-app.html"
 dist = "dist/app"
 public_url = "/app/"
 html_output = "index.html"
-# The crate has no Cargo features: the geometry kernel is pure Rust and
-# cross-compiles to wasm, so the web build gets the same solid modelling the
-# native one does.
+# Desktop and browser builds share the same lightweight 2D drawing core.
 
 [[hooks]]
 stage = "post_build"

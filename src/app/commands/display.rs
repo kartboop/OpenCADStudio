@@ -638,8 +638,15 @@ impl OpenCADStudio {
             // TOOLBAR lists them; TOOLBAR / -TOOLBAR <tab/panel | panel>
             // [Show|Hide] shows one over the drawing or puts it back (a bare
             // name toggles it). They stay while the ribbon is closed.
-            cmd if cmd == "TOOLBAR" || cmd == "-TOOLBAR" || cmd.starts_with("TOOLBAR ") || cmd.starts_with("-TOOLBAR ") => {
-                let rest = cmd.trim_start_matches('-').trim_start_matches("TOOLBAR").trim();
+            cmd if cmd == "TOOLBAR"
+                || cmd == "-TOOLBAR"
+                || cmd.starts_with("TOOLBAR ")
+                || cmd.starts_with("-TOOLBAR ") =>
+            {
+                let rest = cmd
+                    .trim_start_matches('-')
+                    .trim_start_matches("TOOLBAR")
+                    .trim();
                 if rest.is_empty() {
                     let list: Vec<String> = self
                         .ribbon
@@ -649,7 +656,8 @@ impl OpenCADStudio {
                             format!("{}{module}/{title}", if shown { "● " } else { "  " })
                         })
                         .collect();
-                    self.command_line.push_output(&crate::tr!("toolbar", "list"));
+                    self.command_line
+                        .push_output(&crate::tr!("toolbar", "list"));
                     for line in list {
                         self.command_line.push_output(&line);
                     }
@@ -657,8 +665,14 @@ impl OpenCADStudio {
                 }
                 let words: Vec<&str> = rest.split_whitespace().collect();
                 let (name, action) = match words.last().map(|w| w.to_ascii_uppercase()) {
-                    Some(last) if words.len() > 1 && matches!(last.as_str(), "SHOW" | "S" | "HIDE" | "H") => {
-                        (words[..words.len() - 1].join(" "), Some(last.starts_with('S')))
+                    Some(last)
+                        if words.len() > 1
+                            && matches!(last.as_str(), "SHOW" | "S" | "HIDE" | "H") =>
+                    {
+                        (
+                            words[..words.len() - 1].join(" "),
+                            Some(last.starts_with('S')),
+                        )
                     }
                     _ => (words.join(" "), None),
                 };
@@ -670,13 +684,18 @@ impl OpenCADStudio {
                             .into_iter()
                             .any(|(m, t, shown)| m == module && t == title && shown);
                         let origin = self.toolbar_origin();
-                        if self.ribbon.show_toolbar(module, title, action.unwrap_or(!shown), origin) {
+                        if self
+                            .ribbon
+                            .show_toolbar(module, title, action.unwrap_or(!shown), origin)
+                        {
                             self.save_config();
                         }
                     }
-                    None => self
-                        .command_line
-                        .push_error(&crate::tr!("toolbar", "not-found", name = name.clone())),
+                    None => self.command_line.push_error(&crate::tr!(
+                        "toolbar",
+                        "not-found",
+                        name = name.clone()
+                    )),
                 }
                 return Some(Task::none());
             }
@@ -684,7 +703,10 @@ impl OpenCADStudio {
             // ribbon) or Ribbon. Classic shows the Draw, Modify, Layers and
             // Properties toolbars when no toolbar is shown yet.
             cmd if cmd == "WSCURRENT" || cmd.starts_with("WSCURRENT ") => {
-                let value = cmd.trim_start_matches("WSCURRENT").trim().to_ascii_uppercase();
+                let value = cmd
+                    .trim_start_matches("WSCURRENT")
+                    .trim()
+                    .to_ascii_uppercase();
                 match value.as_str() {
                     "CLASSIC" | "C" => {
                         self.ribbon_closed = true;
@@ -703,9 +725,16 @@ impl OpenCADStudio {
                         self.persist_settings_if_changed();
                     }
                     _ => {
-                        let current = if self.ribbon_closed { "Classic" } else { "Ribbon" };
-                        self.command_line
-                            .push_output(&crate::tr!("toolbar", "workspace", current = current));
+                        let current = if self.ribbon_closed {
+                            "Classic"
+                        } else {
+                            "Ribbon"
+                        };
+                        self.command_line.push_output(&crate::tr!(
+                            "toolbar",
+                            "workspace",
+                            current = current
+                        ));
                     }
                 }
                 return Some(Task::none());
@@ -897,183 +926,6 @@ impl OpenCADStudio {
                 }
             }
 
-            // ── EXTRUDE ────────────────────────────────────────────────────
-            "EXTRUDE" => {
-                use crate::modules::insert::solid3d_cmds::ExtrudeCommand;
-                // A preselection becomes the complete source set; otherwise
-                // the interactive command gathers any number of profiles.
-                let selected: Vec<_> = self.tabs[i].scene.selected_entities().into_iter().collect();
-                let color = self.tabs[i].scene.layer_color(&self.tabs[i].active_layer);
-                if !selected.is_empty() {
-                    let mut cmd = ExtrudeCommand::new_named(cmd, color);
-                    let first_curve = selected
-                        .iter()
-                        .find_map(|(_, entity)| crate::entities::curve::entity_curve(entity));
-                    let anchor = first_curve
-                        .as_ref()
-                        .map(|curve| glam::DVec3::from_array(curve.plane.origin))
-                        .unwrap_or(glam::DVec3::ZERO);
-                    let direction = first_curve
-                        .and_then(|curve| curve.plane.normal())
-                        .map(glam::DVec3::from_array);
-                    cmd.set_preselection(
-                        selected
-                            .iter()
-                            .map(|(handle, entity)| (*handle, (*entity).clone()))
-                            .collect(),
-                        anchor,
-                        direction,
-                    );
-                    self.command_line
-                    .push_info(&cmd.wire_density_line(crate::entities::solid3d::clamp_header_isolines(self.tabs[i].scene.document.header.isolines)));
-                self.command_line.push_info(&cmd.prompt());
-                    self.tabs[i].active_cmd = Some(Box::new(cmd));
-                } else {
-                    let cmd = ExtrudeCommand::new_named(cmd, color);
-                    self.command_line
-                    .push_info(&cmd.wire_density_line(crate::entities::solid3d::clamp_header_isolines(self.tabs[i].scene.document.header.isolines)));
-                self.command_line.push_info(&cmd.prompt());
-                    self.tabs[i].active_cmd = Some(Box::new(cmd));
-                }
-            }
-
-            "THICKEN" => {
-                use crate::modules::insert::solid3d_cmds::ThickenCommand;
-                let selected = self.tabs[i]
-                    .scene
-                    .selected_entities()
-                    .into_iter()
-                    .map(|(handle, entity)| (handle, entity.clone()))
-                    .collect();
-                let command = ThickenCommand::new(selected);
-                self.command_line.push_info(&command.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(command));
-            }
-
-            "PRESSPULL" => {
-                use crate::modules::insert::solid3d_cmds::PresspullCommand;
-                let color = self.tabs[i].scene.layer_color(&self.tabs[i].active_layer);
-                let mut command = PresspullCommand::new(color);
-                command.set_isolines(crate::entities::solid3d::clamp_header_isolines(
-                    self.tabs[i].scene.document.header.isolines,
-                ));
-                command.set_preselection(self.presspull_preselection());
-                self.command_line.push_info(&command.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(command));
-            }
-
-            // ── REVOLVE ────────────────────────────────────────────────────
-            "REVOLVE" => {
-                use crate::modules::insert::solid3d_cmds::RevolveCommand;
-                let selected: Vec<_> = self.tabs[i].scene.selected_entities().into_iter().collect();
-                let color = self.tabs[i].scene.layer_color(&self.tabs[i].active_layer);
-                let isolines = crate::entities::solid3d::clamp_header_isolines(
-                    self.tabs[i].scene.document.header.isolines,
-                );
-                let mut cmd = RevolveCommand::new(color, isolines);
-                if !selected.is_empty() {
-                    cmd.set_preselection(
-                        selected
-                            .iter()
-                            .map(|(handle, entity)| (*handle, (*entity).clone()))
-                            .collect(),
-                    );
-                }
-                self.command_line
-                    .push_info(&cmd.wire_density_line(crate::entities::solid3d::clamp_header_isolines(self.tabs[i].scene.document.header.isolines)));
-                self.command_line.push_info(&cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(cmd));
-            }
-
-            // ── SWEEP ──────────────────────────────────────────────────────
-            "SWEEP" => {
-                use crate::modules::insert::solid3d_cmds::SweepCommand;
-                let color = self.tabs[i].scene.layer_color(&self.tabs[i].active_layer);
-                let isolines = crate::entities::solid3d::clamp_header_isolines(
-                    self.tabs[i].scene.document.header.isolines,
-                );
-                let mut cmd = SweepCommand::new(color, isolines);
-                cmd.set_parameters(self.tabs[i].scene.named_parameters().clone());
-                let selected = self.tabs[i]
-                    .scene
-                    .selected_handles_in_order()
-                    .into_iter()
-                    .filter_map(|handle| {
-                        self.tabs[i]
-                            .scene
-                            .document
-                            .get_entity(handle)
-                            .cloned()
-                            .map(|entity| (handle, entity))
-                    })
-                    .collect::<Vec<_>>();
-                if !selected.is_empty() {
-                    cmd.set_preselection(selected);
-                }
-                self.command_line
-                    .push_info(&cmd.wire_density_line(crate::entities::solid3d::clamp_header_isolines(self.tabs[i].scene.document.header.isolines)));
-                self.command_line.push_info(&cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(cmd));
-            }
-
-            // ── LOFT ───────────────────────────────────────────────────────
-            "LOFT" => {
-                use crate::modules::insert::solid3d_cmds::LoftCommand;
-                let color = self.tabs[i].scene.layer_color(&self.tabs[i].active_layer);
-                let isolines = crate::entities::solid3d::clamp_header_isolines(
-                    self.tabs[i].scene.document.header.isolines,
-                );
-                let selected = self.tabs[i]
-                    .scene
-                    .selected_handles_in_order()
-                    .into_iter()
-                    .filter_map(|handle| {
-                        self.tabs[i]
-                            .scene
-                            .document
-                            .get_entity(handle)
-                            .cloned()
-                            .map(|entity| (handle, entity))
-                    })
-                    .collect();
-                let available = self.tabs[i]
-                    .scene
-                    .document
-                    .entities()
-                    .map(|entity| (entity.common().handle, entity.clone()))
-                    .collect();
-                let cmd = LoftCommand::new(
-                    color,
-                    isolines,
-                    crate::command::ExtrudeMode::Solid,
-                    selected,
-                    available,
-                );
-                self.command_line.push_info(&cmd.wire_density_line(isolines));
-                self.command_line.push_info(&cmd.prompt());
-                self.tabs[i].active_cmd = Some(Box::new(cmd));
-            }
-
-            // ── OBJ import ───────────────────────────────────────────────
-            "IMPORTOBJ" | "OBJIMPORT" => {
-                return Some(Task::done(Message::ObjImport));
-            }
-
-            // ── STL export ────────────────────────────────────────────────
-            "STLOUT" | "EXPORTSTL" => {
-                return Some(Task::done(Message::StlExport));
-            }
-
-            // FBXEXPORT — export 3D meshes to FBX for visualisation tools
-            "FBXEXPORT" | "EXPORTFBX" => {
-                return Some(Task::done(Message::FbxExport));
-            }
-
-            // STEPOUT — export 3D meshes to STEP AP214 format
-            "STEPOUT" | "EXPORTSTEP" | "STPOUT" => {
-                return Some(Task::done(Message::StepExport));
-            }
-
             // ── Plot Style Editor GUI ─────────────────────────────────────
             "PLOTSTYLEPANEL" | "PLOTSTYLEEDITOR" | "STYLESMANAGER" => {
                 return Some(Task::done(Message::PlotStylePanelOpen));
@@ -1173,9 +1025,8 @@ impl OpenCADStudio {
                     }
                 };
                 if path_text.is_empty() {
-                    self.command_line.push_info(
-                        crate::t!("Usage: PUBLISH <file.pdf> [sheet names…]").as_ref(),
-                    );
+                    self.command_line
+                        .push_info(crate::t!("Usage: PUBLISH <file.pdf> [sheet names…]").as_ref());
                     return Some(Task::none());
                 }
                 let available: Vec<String> = self.tabs[i]
@@ -1218,12 +1069,8 @@ impl OpenCADStudio {
                 }
                 let path = std::path::PathBuf::from(path_text);
                 self.command_line.push_output(
-                    crate::tf!(
-                        "Publishing {} sheet(s) to {}",
-                        names.len(),
-                        path.display()
-                    )
-                    .as_ref(),
+                    crate::tf!("Publishing {} sheet(s) to {}", names.len(), path.display())
+                        .as_ref(),
                 );
                 match self.export_pdf_layout_names(&path, &names) {
                     Ok((pages, bytes, sheets)) => {
@@ -1247,18 +1094,18 @@ impl OpenCADStudio {
                 return Some(Task::none());
             }
             cmd if cmd.starts_with("EXPORTPDF ") || cmd.starts_with("EXPORT ") => {
-                let rest = cmd.split_once(' ').map(|(_, rest)| rest.trim()).unwrap_or("");
+                let rest = cmd
+                    .split_once(' ')
+                    .map(|(_, rest)| rest.trim())
+                    .unwrap_or("");
                 let (path_text, all_layouts) = match rest.rsplit_once(char::is_whitespace) {
-                    Some((head, tail)) if tail.eq_ignore_ascii_case("ALL") => {
-                        (head.trim(), true)
-                    }
+                    Some((head, tail)) if tail.eq_ignore_ascii_case("ALL") => (head.trim(), true),
                     _ => (rest, false),
                 };
                 let path_text = path_text.trim().trim_matches('"');
                 if path_text.is_empty() {
-                    self.command_line.push_info(
-                        crate::t!("Usage: EXPORTPDF <file.pdf> [ALL]").as_ref(),
-                    );
+                    self.command_line
+                        .push_info(crate::t!("Usage: EXPORTPDF <file.pdf> [ALL]").as_ref());
                     return Some(Task::none());
                 }
                 let path = std::path::PathBuf::from(path_text);
@@ -1463,7 +1310,8 @@ impl OpenCADStudio {
                                 }
                                 "CLIP" => match arg {
                                     "ON" => {
-                                        ul.flags |= document::entities::UnderlayDisplayFlags::CLIPPING;
+                                        ul.flags |=
+                                            document::entities::UnderlayDisplayFlags::CLIPPING;
                                         changed += 1;
                                     }
                                     "OFF" => {
@@ -1681,9 +1529,11 @@ impl OpenCADStudio {
                     false
                 };
                 let explicit: Option<String> = if adding {
-                    cmd.strip_prefix("OBJECTSCALE ADD").map(|r| r.trim().to_string())
+                    cmd.strip_prefix("OBJECTSCALE ADD")
+                        .map(|r| r.trim().to_string())
                 } else {
-                    cmd.strip_prefix("OBJECTSCALE DELETE").map(|r| r.trim().to_string())
+                    cmd.strip_prefix("OBJECTSCALE DELETE")
+                        .map(|r| r.trim().to_string())
                 };
                 let explicit_scale = explicit
                     .as_deref()
@@ -1702,7 +1552,9 @@ impl OpenCADStudio {
                     );
                     return Some(Task::none());
                 };
-                let scale_label: &str = explicit_scale.as_deref().unwrap_or("the current annotation scale");
+                let scale_label: &str = explicit_scale
+                    .as_deref()
+                    .unwrap_or("the current annotation scale");
 
                 let selected: Vec<document::Handle> = self.tabs[i]
                     .scene
@@ -2200,7 +2052,8 @@ impl OpenCADStudio {
                     }
                     "LIST" | "?" | "" => self.print_scale_list(i),
                     _ => self.command_line.push_error(
-                        crate::t!("SCALELISTEDIT: use LIST, ADD <ratio> or DELETE <ratio>.").as_ref(),
+                        crate::t!("SCALELISTEDIT: use LIST, ADD <ratio> or DELETE <ratio>.")
+                            .as_ref(),
                     ),
                 }
             }
@@ -2333,12 +2186,11 @@ impl OpenCADStudio {
             }
 
             "DATALINKUPDATE" => {
-                let names = crate::app::annotation_data::data_link_entries(
-                    &self.tabs[i].scene.document,
-                )
-                .into_iter()
-                .map(|(name, _)| name)
-                .collect();
+                let names =
+                    crate::app::annotation_data::data_link_entries(&self.tabs[i].scene.document)
+                        .into_iter()
+                        .map(|(name, _)| name)
+                        .collect();
                 let command =
                     crate::modules::annotate::data_link::DataLinkUpdateCommand::new(names);
                 self.command_line.push_info(&command.prompt());
@@ -2398,9 +2250,8 @@ impl OpenCADStudio {
                         _ => Some(*link) == wanted_link,
                     })
                     .collect();
-                self.command_line.push_output(
-                    crate::tf!("{} object(s) found.", jobs.len()).as_ref(),
-                );
+                self.command_line
+                    .push_output(crate::tf!("{} object(s) found.", jobs.len()).as_ref());
                 if write {
                     let mut refused = 0usize;
                     let mut written = 0usize;
@@ -2459,10 +2310,7 @@ impl OpenCADStudio {
                         ) {
                             Some(rows) => (rows, 1),
                             None => (
-                                crate::app::annotation_data::read_data_link(
-                                    document,
-                                    *link_handle,
-                                ),
+                                crate::app::annotation_data::read_data_link(document, *link_handle),
                                 0,
                             ),
                         };
@@ -2480,11 +2328,7 @@ impl OpenCADStudio {
                     );
                 }
                 self.command_line.push_output(
-                    crate::tf!(
-                        "{} object(s) updated successfully.",
-                        updated
-                    )
-                    .as_ref(),
+                    crate::tf!("{} object(s) updated successfully.", updated).as_ref(),
                 );
             }
 
@@ -2617,9 +2461,8 @@ impl OpenCADStudio {
                 .push_info(crate::t!("No annotation scales defined.").as_ref());
             return;
         }
-        self.command_line.push_output(
-            crate::tf!("Annotation scales ({}):", rows.len()).as_ref(),
-        );
+        self.command_line
+            .push_output(crate::tf!("Annotation scales ({}):", rows.len()).as_ref());
         for (name, _inverse, factor) in rows {
             let in_use = self.tabs[i].scene.scale_in_use_count(&name);
             let marker = if name.eq_ignore_ascii_case(&current) {

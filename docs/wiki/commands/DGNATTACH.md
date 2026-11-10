@@ -1,6 +1,6 @@
 ---
 summary: Attaches a DGN file to the drawing as an underlay.
-related: DGNADJUST, DGNCLIP, DGNIMPORT, PDFATTACH, DWFATTACH
+related: DGNADJUST, DGNCLIP, PDFATTACH, DWFATTACH
 ribbon: Insert tab › Reference panel
 ---
 
@@ -22,4 +22,4 @@ ribbon: Insert tab › Reference panel
 ## Notes
 - When [`FILEDIA`](FILEDIA-System-Variable) is 0, `DGNATTACH` uses the command-line form too.
 - If you type a file name after `DGNATTACH`, the file dialog is skipped and the command line asks for the rest.
-- The underlay is a reference to the file; its elements are not copied into the drawing. Use [`DGNIMPORT`](DGNIMPORT-Command) to bring them in as objects.
+- The underlay is a reference to the file; its elements are not copied into the drawing.

@@ -1,6 +1,6 @@
 ---
 summary: Opens a sketch on a plane: sets the plane as the UCS, turns the view square-on and turns snapping on until you finish the sketch.
-related: FINISHSKETCH, EXTRUDE, UCS, PLAN, BROWSER
+related: FINISHSKETCH, UCS, PLAN, BROWSER
 ---
 
 ## Usage
@@ -11,6 +11,6 @@ related: FINISHSKETCH, EXTRUDE, UCS, PLAN, BROWSER
 
 ## Notes
 - A sketch is a mode, not a separate object. What you draw is ordinary model-space geometry.
-- When you finish, the previous UCS and snap setting come back, and the objects you drew become the Previous selection. [`EXTRUDE`](EXTRUDE-Command) with the Previous option can then use them.
+- When you finish, the previous UCS and snap setting come back, and the objects you drew become the Previous selection for another editing command.
 - Only one sketch can be open at a time.
 - Any other word after the command name prints the usage and does nothing.

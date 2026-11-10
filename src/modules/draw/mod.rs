@@ -1,9 +1,7 @@
 // Draw module — Draw, Modify, Annotation and Layer tools.
 
-pub(crate) mod changelog;
 pub mod clipboard;
 pub mod defaults;
-pub(crate) mod donate;
 pub mod draw;
 pub mod fence;
 pub mod groups;
@@ -11,7 +9,6 @@ pub mod inquiry;
 pub mod layers;
 pub mod modify;
 pub mod properties;
-pub(crate) mod report;
 pub mod select;
 pub mod units;
 

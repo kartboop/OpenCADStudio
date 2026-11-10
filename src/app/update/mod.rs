@@ -79,9 +79,7 @@ fn perf_variant_name(msg: &Message) -> String {
     impl std::fmt::Write for VariantPrefix {
         fn write_str(&mut self, part: &str) -> std::fmt::Result {
             for character in part.chars() {
-                if matches!(character, '(' | '{')
-                    || character.is_whitespace()
-                    || self.0.len() >= 72
+                if matches!(character, '(' | '{') || character.is_whitespace() || self.0.len() >= 72
                 {
                     return Err(std::fmt::Error);
                 }
@@ -124,10 +122,7 @@ fn reorder_insertion_index(from: usize, to: usize, after: bool, len: usize) -> O
     (insertion != from).then_some(insertion)
 }
 
-#[cfg(test)]
-mod block_ops_tests;
 pub(super) mod blocks_palette;
-pub(super) mod tool_palettes;
 mod command;
 pub(crate) mod context_menu;
 mod dialog;
@@ -135,17 +130,12 @@ mod dynamic;
 mod file;
 mod graphic_attributes;
 mod keytips;
+pub(super) mod tool_palettes;
 pub(in crate::app) use file::background_task;
 #[cfg(not(target_arch = "wasm32"))]
 pub(in crate::app) use file::native_paths_match;
 mod page_setup_import;
 mod prop_commit;
-#[cfg(not(target_arch = "wasm32"))]
-mod plugin_grips;
-#[cfg(not(target_arch = "wasm32"))]
-pub(in crate::app) use plugin_grips::SETTLE_WATCHDOG;
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod plugin_grips_tests;
 mod qselect;
 mod style;
 pub(crate) mod style_import;
@@ -218,7 +208,9 @@ impl OpenCADStudio {
                 return;
             }
         }
-        if self.active_modal == Some(TableStyle) && std::mem::take(&mut self.tablestyle_parent_table) {
+        if self.active_modal == Some(TableStyle)
+            && std::mem::take(&mut self.tablestyle_parent_table)
+        {
             self.return_to_table_insert();
             return;
         }
@@ -344,26 +336,12 @@ impl OpenCADStudio {
                 }
             }
             Some(PdfImportFile) => self.pdf_import_file = None,
-            Some(ImportFile) => self.import_dialogs.file = None,
-            Some(DgnImport) => self.import_dialogs.dgn = None,
-            Some(TdsImport) => self.import_dialogs.tds = None,
-            // Cancel or ✕ stops the import at this mesh.
-            Some(TdsMaterial) => {
-                if let Some(state) = self.import_dialogs.tds_material.take() {
-                    self.stop_tds_import(state);
-                }
-            }
             // OK or ✕ dismisses this map; the next one follows.
             // Cancel or ✕ leaves the cells as they were.
             Some(TableCellWarning) => self.table_cell_warning = None,
             // Cancel drops the typed value; the cell keeps its value and type.
             Some(TableCellEntry) => self.table_cell_entry = None,
             Some(HatchBoundaryWarning) => self.close_hatch_boundary_warning(),
-            Some(TdsMissingMap) => {
-                if !self.import_dialogs.tds_maps.is_empty() {
-                    self.import_dialogs.tds_maps.remove(0);
-                }
-            }
             Some(XrefAttach) => self.xref_attach = None,
             Some(WriteBlock) => self.wblock = None,
             Some(Hyperlink) => {
@@ -395,7 +373,6 @@ impl OpenCADStudio {
                 self.layer_state_edit_filter.clear();
                 self.layer_state_edit_color_open = None;
             }
-            Some(PluginDialog) => self.plugin_dialog_state = None,
             Some(Recovery) => self.recovery_report = None,
             _ => {}
         }
@@ -415,11 +392,6 @@ impl OpenCADStudio {
         };
         // Recentre / reset the size of the next dialog and drop any drag.
         self.reset_modal_geometry();
-        // A 3D Studio import that just ran (or is stopped from its
-        // material window) reports each texture map it did not find.
-        if !self.import_dialogs.tds_maps.is_empty() {
-            self.active_modal = Some(TdsMissingMap);
-        }
     }
 
     /// Fire the focus-sweep once when a property field is active, so a
@@ -436,86 +408,18 @@ impl OpenCADStudio {
         }
     }
 
-    /// Emit `SelectionChangedV4` to V4 plugins when the active tab's selection
-    /// set actually changed since the last broadcast.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn notify_plugins_selection_changed(&mut self) {
+    pub(super) fn notify_selection_changed(&mut self) {
         if self.active_tab >= self.tabs.len() {
             return;
         }
-        let i = self.active_tab;
-        let tab_id = self.tabs[i].id;
-        let fingerprint = self.tabs[i].scene.selection_fingerprint();
-        let key = (tab_id, fingerprint);
-        if self.last_plugin_selection == Some(key) {
-            return;
-        }
-        self.last_plugin_selection = Some(key);
-        let handles = self.tabs[i].scene.selected_handles_in_order();
-        crate::plugin::v4_support::publish_selection_changed_v4(tab_id, handles.clone());
-        // Same guarded boundary, second surface (API v9): the plain
-        // `SelectionChanged` reaches every loaded native plugin through
-        // `BuiltinPlugin::on_notification`, without a shared-view
-        // subscription.
-        crate::plugin::v4_support::publish_selection_changed(handles.clone());
-        self.control_record_selection_event(&handles);
-    }
-
-    /// Refresh the shared V4 document after built-in geometry edits. Plugin
-    /// writes publish through HostSession immediately; the fingerprint avoids
-    /// sending a duplicate notification at this message boundary.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn notify_plugins_document_changed(&mut self) {
-        if self.active_tab >= self.tabs.len() {
-            return;
-        }
-        let tab = &self.tabs[self.active_tab];
-        let key = (tab.id, tab.scene.geometry_epoch);
-        if self.last_plugin_document == Some(key) {
-            return;
-        }
-        self.last_plugin_document = Some(key);
-        crate::plugin::v4_support::publish_drawing_changed(tab.id, tab.scene.geometry_epoch);
-        crate::plugin::v4_support::publish_document_view_v4(tab.id, &tab.scene.document);
-        // Same guarded boundary, second surface (API v9): the plain
-        // `DocumentChanged` carries the settled geometry epoch to every
-        // loaded native plugin through `BuiltinPlugin::on_notification`.
-        crate::plugin::v4_support::publish_document_changed(tab.scene.geometry_epoch);
-        // API v13 dirty regions: plugin writes publish their sets at their own
-        // boundary, so an epoch change reaching this one came from elsewhere
-        // and the sets say "walk everything" (empty).
         let tab = &mut self.tabs[self.active_tab];
-        tab.plugin_dirty_overflow = true;
-        let (entities, records) = tab.take_plugin_dirty();
-        crate::plugin::v4_support::publish_document_changed_regions(
-            tab.id,
-            tab.scene.geometry_epoch,
-            entities,
-            records,
-        );
-    }
-
-    /// Announce that a whole document became resident in the active tab —
-    /// opened from file, created from a template, or loaded by a system open
-    /// (API v9). Each tab carries its own pending flag, set only when its
-    /// content is wholesale replaced, so neither an edit nor a tab switch can
-    /// fire it twice and a reload fires it exactly once. Part of the same
-    /// post-message boundary as the selection and document dispatches: runs
-    /// after the mutation settles and pending history scopes closed, never
-    /// inside history replay or interactive picking.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn notify_plugins_document_opened(&mut self) {
-        if self.active_tab >= self.tabs.len() {
+        if !tab.scene.selection_fingerprint_pending() {
             return;
         }
-        let i = self.active_tab;
-        if self.tabs[i].is_start {
-            return;
-        }
-        if !std::mem::take(&mut self.tabs[i].document_opened_pending) {
-            return;
-        }
-        crate::plugin::v4_support::publish_document_opened(self.tabs[i].id);
+        tab.scene.selection_fingerprint();
+        let handles = tab.scene.selected_handles_in_order();
+        self.control_record_selection_event(&handles);
     }
 
     pub fn update(&mut self, msg: Message) -> Task<Message> {
@@ -746,8 +650,8 @@ impl OpenCADStudio {
         self.control_observe_user_message(&msg);
         let perf_started = crate::perf::enabled().then(Instant::now);
         let perf_label = perf_message_label(&msg);
-        let perf_other_variant = (perf_started.is_some() && perf_label == "other")
-            .then(|| perf_variant_name(&msg));
+        let perf_other_variant =
+            (perf_started.is_some() && perf_label == "other").then(|| perf_variant_name(&msg));
         // Keep the stable tab id because dispatch may switch or close tabs.
         let perf_edit_before = perf_started.map(|started| {
             let tab = &self.tabs[self.active_tab];
@@ -957,40 +861,17 @@ impl OpenCADStudio {
                 self.dock_panel_visible(id) && self.dock_panel_on_screen(id)
             }
         };
-        let picker_shown = panel.open_block_picker.is_some_and(|(_, quick)| shown(quick))
+        let picker_shown = panel
+            .open_block_picker
+            .is_some_and(|(_, quick)| shown(quick))
             || panel.open_choice.is_some_and(|(_, quick)| shown(quick));
         if picker_shown || self.block_picker_dismissed {
             if let Some(task) = self.intercept_property_list_key(&msg) {
                 return task;
             }
         }
-        // A command's name is `&'static str`, so this runs on every message —
-        // a mouse move included — without allocating.
-        #[cfg(not(target_arch = "wasm32"))]
-        let active_command = |app: &Self| -> Option<(u64, Option<&'static str>)> {
-            app.tabs.get(app.active_tab).map(|tab| {
-                (
-                    tab.id,
-                    tab.active_cmd.as_ref().map(|command| command.name()),
-                )
-            })
-        };
-        #[cfg(not(target_arch = "wasm32"))]
-        let command_before = active_command(self);
         let task = self.update_inner(msg);
         let perf_dispatch_ms = crate::perf::elapsed_ms(perf_started);
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let command_after = active_command(self);
-            if command_before != command_after {
-                if let Some((tab_id, command)) = command_after {
-                    crate::plugin::v4_support::publish_command_state_changed(
-                        tab_id,
-                        command.map(str::to_owned),
-                    );
-                }
-            }
-        }
         self.refresh_gpu_status();
         if self.graphic_attributes.tracks_selection() {
             let selected = self.tabs[self.active_tab].scene.selected_handles_in_order();
@@ -1086,17 +967,9 @@ impl OpenCADStudio {
         self.refresh_xref_manager_if_stale();
         // Count mode recolours its references after the drawing changes.
         self.refresh_count_if_stale();
-        // Let V4 plugins observe selection changes that happened while handling
-        // this message (picking, window select, QSELECT, SELECTALL, grip edits,
-        // and plugin request draining).
+        // Publish selection changes made while handling this message.
         #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_selection_changed();
-        #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_document_changed();
-        // A message may also have installed a whole document into a tab (file
-        // open, template new); announce it on the same boundary (API v9).
-        #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_document_opened();
+        self.notify_selection_changed();
         // The `N found, M total` count belongs to the command that gathered
         // it; the next command, even one boxed at the same address, starts
         // from nothing.
@@ -1275,21 +1148,20 @@ impl OpenCADStudio {
                 // only while the open slot is free — the same guard as a
                 // desktop drop — and leave the rest queued, so a multi-file
                 // drop opens sequentially without its own subscription.
-                let dropped = if self.opening.is_none()
-                    && !self.dialog_open(super::ModalKind::Recovery)
-                {
-                    crate::io::web_drop::take_dropped()
-                        .map(|file| {
-                            self.update(Message::WebFileDropped(
-                                file.name,
-                                file.bytes,
-                                file.restore_key,
-                            ))
-                        })
-                        .unwrap_or_else(Task::none)
-                } else {
-                    Task::none()
-                };
+                let dropped =
+                    if self.opening.is_none() && !self.dialog_open(super::ModalKind::Recovery) {
+                        crate::io::web_drop::take_dropped()
+                            .map(|file| {
+                                self.update(Message::WebFileDropped(
+                                    file.name,
+                                    file.bytes,
+                                    file.restore_key,
+                                ))
+                            })
+                            .unwrap_or_else(Task::none)
+                    } else {
+                        Task::none()
+                    };
                 // Dropped raster images register their bytes (name-keyed) and
                 // re-resolve any RasterImage the open drawings reference but
                 // couldn't load — the web stand-in for the drawing folder the
@@ -1369,51 +1241,9 @@ impl OpenCADStudio {
                 Task::none()
             }
             Message::ControlCaptureFrame { redrew } => self.on_control_capture_frame(redrew),
-            Message::Graph(message) => self.on_graph(message),
 
             Message::ControlToggle => {
                 self.control.enabled = !self.control.enabled;
-                Task::none()
-            }
-            // Drain plugin-to-host requests that arrived outside of a host call.
-            // This runs on a periodic timer so long-lived plugin sessions such
-            // as the Python REPL can mutate the document without requiring a
-            // user-generated message. Desktop only.
-            #[cfg(not(target_arch = "wasm32"))]
-            Message::DrainPluginRequests => {
-                for tab in 0..self.tabs.len() {
-                    let mut host = crate::app::plugin_host::HostSession::new(self, tab);
-                    crate::plugin::external::with_manager(|mgr| {
-                        mgr.drain_requests(&mut host, &mut |_| {});
-                    });
-                }
-                // API v13: process queued ChannelReady attach acks on the
-                // main thread — the manager lock is free here (the reader
-                // thread only enqueues), boot-window broadcasts flush.
-                crate::plugin::v4_support::drain_channel_ready_acks();
-                // Custom grips live exactly as long as their declaring
-                // plugin: reap the sets of dead/unloaded plugins (and cancel
-                // a drag or hover the dying plugin owned).
-                self.reap_plugin_grips();
-                crate::plugin::external::with_manager(|mgr| {
-                    for line in mgr.drain_io() {
-                        let prefixed =
-                            format!("[{} {}] {}", line.plugin_id, line.source, line.text);
-                        // Every line reaches the host's stderr (the gui.log),
-                        // which a headless or automation session can read;
-                        // the runner's own trace stays off the command line.
-                        eprintln!("{prefixed}");
-                        if line.text.starts_with("[runner]")
-                            || line.text.starts_with("[plugin] ")
-                            || line.text.starts_with("[python-repl]")
-                        {
-                            continue;
-                        }
-                        // A plugin's stderr is its ordinary trace, not an
-                        // error; real failures come through push_error.
-                        self.command_line.push_output(&prefixed);
-                    }
-                });
                 Task::none()
             }
 
@@ -1512,12 +1342,6 @@ impl OpenCADStudio {
             Message::OpenPathPicked(None) => Task::none(),
 
             Message::OpenUrl(url) => crate::sys::open_url(&url, self.main_window),
-
-            Message::StartSectionSelect(section) => {
-                self.start_section = section;
-                self.save_config();
-                Task::none()
-            }
 
             Message::ScrollLayoutTabs(dx) => iced::widget::operation::scroll_by(
                 iced::advanced::widget::Id::new(crate::ui::statusbar::LAYOUT_TABS_SCROLL_ID),
@@ -2202,7 +2026,8 @@ impl OpenCADStudio {
 
             Message::InsertObjectResult(Ok(image)) => {
                 use crate::command::CadCommand;
-                let cmd = crate::modules::draw::draw::raster_image::ImageCommand::new_embedded(image);
+                let cmd =
+                    crate::modules::draw::draw::raster_image::ImageCommand::new_embedded(image);
                 let i = self.active_tab;
                 self.command_line.push_info(&cmd.prompt());
                 self.tabs[i].active_cmd = Some(Box::new(cmd));
@@ -2631,263 +2456,6 @@ impl OpenCADStudio {
 
             Message::DataExtractionSaveResult(_, None) => Task::none(),
 
-            Message::StlExport => {
-                let i = self.active_tab;
-                if self.tabs[i].scene.meshes.is_empty() {
-                    self.command_line
-                        .push_error(crate::t!("STLOUT: no 3D mesh data in this drawing.").as_ref());
-                    return Task::none();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Task::perform(
-                        async {
-                            crate::sys::file_dialog()
-                                .set_title(crate::t!("Export STL").as_ref())
-                                .set_file_name("export.stl")
-                                .add_filter(crate::t!("STL Files").as_ref(), &["stl"])
-                                .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                                .save_file()
-                                .await
-                                .map(|h| crate::sys::handle_path(&h))
-                        },
-                        Message::StlExportPath,
-                    )
-                }
-                // Web: rfd's save dialog shows no UI, so skip straight to a
-                // virtual path — the browser download supplies the file name.
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let stem = self.tabs[i]
-                        .current_path
-                        .as_deref()
-                        .and_then(|p: &std::path::Path| p.file_stem())
-                        .map(|s: &std::ffi::OsStr| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "drawing".into());
-                    Task::perform(
-                        crate::io::stl::pick_stl_path_owned(stem),
-                        Message::StlExportPath,
-                    )
-                }
-            }
-
-            Message::StlExportPath(Some(path)) => self.on_stl_export_path_some(path),
-
-            Message::StlExportPath(None) => Task::none(),
-
-            Message::StlExportFinished(path, result) => {
-                match result {
-                    Ok(()) => self.command_line.push_output(
-                        crate::tf!("STLOUT: exported to \"{}\"", path.display()).as_ref(),
-                    ),
-                    Err(error) => self
-                        .command_line
-                        .push_error(crate::tf!("STLOUT: {error}").as_ref()),
-                }
-                Task::none()
-            }
-
-            // ── STEP AP214 export ─────────────────────────────────────────
-            Message::StepExport => {
-                let i = self.active_tab;
-                if self.tabs[i].scene.meshes.is_empty() {
-                    self.command_line.push_error(
-                        crate::t!("STEPOUT: no 3D mesh data in this drawing.").as_ref(),
-                    );
-                    return Task::none();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Task::perform(
-                        async {
-                            crate::sys::file_dialog()
-                                .set_title(crate::t!("Export STEP AP214").as_ref())
-                                .set_file_name("export.step")
-                                .add_filter(crate::t!("STEP Files").as_ref(), &["step", "stp"])
-                                .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                                .save_file()
-                                .await
-                                .map(|h| crate::sys::handle_path(&h))
-                        },
-                        Message::StepExportPath,
-                    )
-                }
-                // Web: rfd's save dialog shows no UI, so skip straight to a
-                // virtual path — the browser download supplies the file name.
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let stem = self.tabs[i]
-                        .current_path
-                        .as_deref()
-                        .and_then(|p: &std::path::Path| p.file_stem())
-                        .map(|s: &std::ffi::OsStr| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "drawing".into());
-                    Task::perform(
-                        crate::io::step::pick_step_path_owned(stem),
-                        Message::StepExportPath,
-                    )
-                }
-            }
-
-            // ── FBX export ────────────────────────────────────────────────
-            Message::FbxExport => {
-                let i = self.active_tab;
-                if self.tabs[i].scene.meshes.is_empty() {
-                    self.command_line.push_error(
-                        crate::t!("FBXEXPORT: no 3D mesh data in this drawing.").as_ref(),
-                    );
-                    return Task::none();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Task::perform(
-                        async {
-                            crate::sys::file_dialog()
-                                .set_title(crate::t!("Export FBX").as_ref())
-                                .set_file_name("export.fbx")
-                                .add_filter(crate::t!("FBX Files").as_ref(), &["fbx"])
-                                .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                                .save_file()
-                                .await
-                                .map(|h| crate::sys::handle_path(&h))
-                        },
-                        Message::FbxExportPath,
-                    )
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let stem = self.tabs[i]
-                        .current_path
-                        .as_deref()
-                        .and_then(|p: &std::path::Path| p.file_stem())
-                        .map(|s: &std::ffi::OsStr| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "drawing".into());
-                    Task::perform(
-                        crate::io::fbx::pick_fbx_path_owned(stem),
-                        Message::FbxExportPath,
-                    )
-                }
-            }
-
-            Message::FbxExportPath(Some(path)) => self.on_fbx_export_path_some(path),
-
-            Message::FbxExportPath(None) => Task::none(),
-
-            Message::FbxExportFinished(path, result) => {
-                match result {
-                    Ok(()) => self.command_line.push_output(
-                        crate::tf!("FBXEXPORT: exported to \"{}\"", path.display()).as_ref(),
-                    ),
-                    Err(error) => self
-                        .command_line
-                        .push_error(crate::tf!("FBXEXPORT: {error}").as_ref()),
-                }
-                Task::none()
-            }
-
-            Message::StepExportPath(Some(path)) => self.on_step_export_path_some(path),
-
-            Message::StepExportPath(None) => Task::none(),
-
-            Message::StepExportFinished(path, result) => {
-                match result {
-                    Ok(()) => self.command_line.push_output(
-                        crate::tf!("STEPOUT: exported to \"{}\"", path.display()).as_ref(),
-                    ),
-                    Err(error) => self
-                        .command_line
-                        .push_error(crate::tf!("STEPOUT: {error}").as_ref()),
-                }
-                Task::none()
-            }
-
-            // ── OBJ import ────────────────────────────────────────────────
-            #[cfg(not(target_arch = "wasm32"))]
-            Message::ObjImport => Task::perform(
-                async {
-                    crate::sys::file_dialog()
-                        .set_title(crate::t!("Import OBJ Mesh").as_ref())
-                        .add_filter(crate::t!("Wavefront OBJ").as_ref(), &["obj", "OBJ"])
-                        .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                        .pick_file()
-                        .await
-                        .map(|h| crate::sys::handle_path(&h))
-                },
-                Message::ObjImportPath,
-            ),
-
-            // Web: the browser picker hands back a handle whose bytes must be
-            // read directly — the name-only `PathBuf` it maps to cannot be
-            // opened — so pick, read, and parse in one step and feed the
-            // shared finished handler. A cancelled picker stays silent.
-            #[cfg(target_arch = "wasm32")]
-            Message::ObjImport => {
-                let tab_id = self.tabs[self.active_tab].id;
-                Task::perform(
-                    async move {
-                        let handle = crate::sys::file_dialog()
-                            .set_title(crate::t!("Import OBJ Mesh").as_ref())
-                            .add_filter(crate::t!("Wavefront OBJ").as_ref(), &["obj", "OBJ"])
-                            .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                            .pick_file()
-                            .await?;
-                        let path = crate::sys::handle_path(&handle);
-                        let bytes = handle.read().await;
-                        let result = crate::io::obj::parse_obj(
-                            &String::from_utf8_lossy(&bytes),
-                            [0.7, 0.7, 0.85, 1.0],
-                        )
-                        .ok_or_else(|| "no usable geometry in file".to_string());
-                        Some((tab_id, path, result))
-                    },
-                    |picked| match picked {
-                        Some((tab_id, path, result)) => {
-                            Message::ObjImportFinished(tab_id, path, result)
-                        }
-                        None => Message::Noop,
-                    },
-                )
-            }
-
-            Message::ObjImportPath(Some(path)) => self.on_obj_import_path_some(path),
-
-            Message::ObjImportPath(None) => Task::none(),
-
-            Message::ObjImportFinished(tab_id, path, result) => {
-                match result {
-                    Err(error) => self
-                        .command_line
-                        .push_error(crate::tf!("IMPORTOBJ: {error}").as_ref()),
-                    Ok(mut mesh) => {
-                        let Some(i) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
-                            self.command_line.push_info(
-                                crate::t!("IMPORTOBJ: target drawing was closed.").as_ref(),
-                            );
-                            return Task::none();
-                        };
-                        let file_stem = path
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "obj_mesh".into());
-                        mesh.name = file_stem.clone();
-                        self.push_undo_snapshot(i, "IMPORTOBJ");
-                        let entity = crate::modules::insert::solid3d_cmds::empty_solid3d();
-                        let handle = self.tabs[i].scene.add_entity(entity);
-                        if !handle.is_null() {
-                            self.tabs[i]
-                                .scene
-                                .meshes
-                                .insert(handle, crate::scene::MeshLodSet::from_single(mesh));
-                            self.tabs[i].dirty = true;
-                            self.command_line.push_output(
-                                crate::tf!("IMPORTOBJ: imported \"{file_stem}\" as mesh.").as_ref(),
-                            );
-                        }
-                    }
-                }
-                Task::none()
-            }
-
             Message::SaveFile => self.on_save_file(),
             Message::ExtractionOutdated(choice) => self.on_extraction_outdated(choice),
 
@@ -2995,7 +2563,6 @@ impl OpenCADStudio {
 
             Message::PdfDialog(message) => self.update_pdf_dialog(message),
             Message::HatchDialog(message) => self.update_hatch_dialog(message),
-            Message::ImportDialog(message) => self.update_import_dialog(message),
             Message::AttdefDialog(message) => self.on_attdef_dialog(message),
             Message::InsertAttrDialog(message) => self.on_insert_attr_dialog(message),
             Message::AttMan(message) => self.on_attman(message),
@@ -3091,7 +2658,12 @@ impl OpenCADStudio {
                 };
                 Task::batch([sweep, run])
             }
-            Message::RibbonFloatPanel { module, title, x, y } => {
+            Message::RibbonFloatPanel {
+                module,
+                title,
+                x,
+                y,
+            } => {
                 if self.ribbon.float_panel(module, &title, x, y) {
                     self.save_config();
                 }
@@ -3127,462 +2699,6 @@ impl OpenCADStudio {
                 let sweep = self.sync_active_field_if_any();
                 Task::batch(vec![sweep, self.on_ribbon_tool_click(tool_id, event)])
             }
-            Message::PluginFileDialogResult { command, path } => {
-                if let Some(path) = path {
-                    // Dispatch "<command> <path>" with original case intact —
-                    // the command line would upper-case the whole string and
-                    // mangle case-sensitive paths on Linux/macOS.
-                    let line = format!("{} {}", command, path.to_string_lossy());
-                    let i = self.active_tab;
-                    if !crate::plugin::try_dispatch(self, i, &line) {
-                        self.command_line
-                            .push_error(crate::tf!("No plugin handled: {command}").as_ref());
-                    }
-                }
-                Task::none()
-            }
-
-            Message::PluginDialogTextChange(id, val) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    state.text_values.insert(id, val);
-                }
-                Task::none()
-            }
-            Message::PluginDialogBoolToggle(id, val) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    state.bool_values.insert(id, val);
-                }
-                Task::none()
-            }
-            Message::PluginDialogChoiceSelect(id, idx) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    state.choice_values.insert(id, idx);
-                }
-                Task::none()
-            }
-            Message::PluginDialogColorChange(id, rgb) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    state.color_values.insert(id, rgb);
-                }
-                Task::none()
-            }
-            Message::PluginDialogTableCellChange(id, row, col, val) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    if let Some(rows) = state.table_values.get_mut(&id) {
-                        if let Some(row_data) = rows.get_mut(row) {
-                            if let Some(cell) = row_data.get_mut(col) {
-                                *cell = val;
-                            }
-                        }
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginDialogTableAddRow(id) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    let col_count = state.find_table_col_count(&id);
-                    if let Some(rows) = state.table_values.get_mut(&id) {
-                        rows.push(vec![String::new(); col_count]);
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginDialogTableRemoveRow(id, row_idx) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    if let Some(rows) = state.table_values.get_mut(&id) {
-                        if row_idx < rows.len() {
-                            rows.remove(row_idx);
-                        }
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginDialogSectionToggle(id) => {
-                if let Some(state) = &mut self.plugin_dialog_state {
-                    if state.collapsed_sections.contains(&id) {
-                        state.collapsed_sections.remove(&id);
-                    } else {
-                        state.collapsed_sections.insert(id);
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginDialogFilePick(id) => {
-                let (is_save, extensions) = if let Some(state) = &self.plugin_dialog_state {
-                    fn find_fp(ctrls: &[ocs_plugin_api::dialog::DialogControl], target: &str) -> Option<(bool, Vec<String>)> {
-                        for c in ctrls {
-                            match c {
-                                ocs_plugin_api::dialog::DialogControl::FilePicker {
-                                    id: cid,
-                                    extensions,
-                                    save,
-                                    ..
-                                } if cid == target => return Some((*save, extensions.clone())),
-                                ocs_plugin_api::dialog::DialogControl::Fields { controls, .. }
-                                | ocs_plugin_api::dialog::DialogControl::Row { controls, .. }
-                                | ocs_plugin_api::dialog::DialogControl::Column { controls, .. } => {
-                                    if let Some(res) = find_fp(controls, target) {
-                                        return Some(res);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        None
-                    }
-                    state
-                        .def
-                        .rows
-                        .iter()
-                        .find_map(|r| find_fp(&r.controls, &id))
-                        .unwrap_or((false, Vec::new()))
-                } else {
-                    (false, Vec::new())
-                };
-                let id_clone = id.clone();
-                iced::Task::perform(
-                    async move {
-                        let mut dialog = rfd::AsyncFileDialog::new();
-                        if !extensions.is_empty() {
-                            let ext_strs: Vec<&str> =
-                                extensions.iter().map(|s| s.as_str()).collect();
-                            dialog = dialog.add_filter("Files", &ext_strs);
-                        }
-                        let handle = if is_save {
-                            dialog.save_file().await
-                        } else {
-                            dialog.pick_file().await
-                        };
-                        handle.map(|h| crate::sys::handle_path(&h))
-                    },
-                    move |path| Message::PluginDialogFilePicked(id_clone, path),
-                )
-            }
-            Message::PluginDialogFilePicked(id, path) => {
-                if let Some(p) = path {
-                    if let Some(state) = &mut self.plugin_dialog_state {
-                        state
-                            .file_values
-                            .insert(id, p.to_string_lossy().to_string());
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginDialogSubmit => {
-                let response = if let Some(state) = &self.plugin_dialog_state {
-                    state.collect_response()
-                } else {
-                    ocs_plugin_api::dialog::DialogResponse::Cancelled
-                };
-                self.close_active_modal();
-
-                let tab_idx = self.active_tab;
-                let (cmd_result, next_dialog, panel_updates) = if let Some(cmd) = self
-                    .tabs
-                    .get_mut(tab_idx)
-                    .and_then(|t| t.active_cmd.as_mut())
-                {
-                    let res = cmd.on_dialog_response(response);
-                    let next = if matches!(
-                        res,
-                        crate::command::CmdResult::CommitAndExit(_)
-                            | crate::command::CmdResult::CommitEntitiesAndExit(_)
-                            | crate::command::CmdResult::Cancel
-                    ) {
-                        None
-                    } else {
-                        cmd.modal_dialog()
-                    };
-                    let updates = cmd.take_pending_panel_updates();
-                    (Some(res), next, updates)
-                } else {
-                    (None, None, Vec::new())
-                };
-
-                for (panel_id, values) in panel_updates {
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        panel.update_values(values);
-                    }
-                }
-
-                if let Some(def) = next_dialog {
-                    self.open_plugin_dialog(def);
-                }
-
-                if let Some(res) = cmd_result {
-                    self.apply_cmd_result(res)
-                } else {
-                    Task::none()
-                }
-            }
-            Message::PluginDialogCancel => {
-                self.close_active_modal();
-
-                let tab_idx = self.active_tab;
-                let (cmd_result, next_dialog, panel_updates) = if let Some(cmd) = self
-                    .tabs
-                    .get_mut(tab_idx)
-                    .and_then(|t| t.active_cmd.as_mut())
-                {
-                    let res = cmd.on_dialog_response(ocs_plugin_api::dialog::DialogResponse::Cancelled);
-                    let next = if matches!(
-                        res,
-                        crate::command::CmdResult::CommitAndExit(_)
-                            | crate::command::CmdResult::CommitEntitiesAndExit(_)
-                            | crate::command::CmdResult::Cancel
-                    ) {
-                        None
-                    } else {
-                        cmd.modal_dialog()
-                    };
-                    let updates = cmd.take_pending_panel_updates();
-                    (Some(res), next, updates)
-                } else {
-                    (None, None, Vec::new())
-                };
-
-                for (panel_id, values) in panel_updates {
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        panel.update_values(values);
-                    }
-                }
-
-                if let Some(def) = next_dialog {
-                    self.open_plugin_dialog(def);
-                }
-
-                if let Some(res) = cmd_result {
-                    self.apply_cmd_result(res)
-                } else {
-                    Task::none()
-                }
-            }
-
-            Message::PluginPanelButtonClick(panel_id, control_id, action) => {
-                let action_str = action.unwrap_or_default();
-                let lower = action_str.to_ascii_lowercase();
-
-                // 1. Built-in keywords
-                if lower == "close" || lower == "hide" {
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        panel.visible = false;
-                    }
-                    return Task::none();
-                } else if lower == "clear" {
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        for rows in panel.table_values.values_mut() {
-                            rows.clear();
-                        }
-                    }
-                    crate::plugin::v4_support::publish_panel_action(
-                        panel_id,
-                        control_id,
-                        "clear".to_string(),
-                        None,
-                    );
-                    return Task::none();
-                } else if lower == "reset" {
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        let def = panel.def.clone();
-                        *panel = crate::ui::window::plugin_panel::PluginPanelState::from_def(def);
-                    }
-                    crate::plugin::v4_support::publish_panel_action(
-                        panel_id,
-                        control_id,
-                        "reset".to_string(),
-                        None,
-                    );
-                    return Task::none();
-                }
-
-                // 2. Direct CAD command
-                if !action_str.is_empty() {
-                    return self.dispatch_command(&action_str);
-                }
-
-                // 3. Otherwise broadcast as a button click event to plugin
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    control_id,
-                    "click".to_string(),
-                    None,
-                );
-                Task::none()
-            }
-            Message::PluginPanelTextChange(panel_id, control_id, val) => {
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    panel.text_values.insert(control_id.clone(), val.clone());
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    control_id,
-                    "change".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Text(val)),
-                );
-                Task::none()
-            }
-            Message::PluginPanelBoolToggle(panel_id, control_id, checked) => {
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    panel.bool_values.insert(control_id.clone(), checked);
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    control_id,
-                    "change".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Bool(checked)),
-                );
-                Task::none()
-            }
-            Message::PluginPanelChoiceSelect(panel_id, control_id, index, text) => {
-                let choice_text = if !text.is_empty() {
-                    text
-                } else {
-                    self.plugin_panels.get(&panel_id).and_then(|p| {
-                        fn find_choice(ctrls: &[ocs_plugin_api::dialog::DialogControl], cid: &str, idx: usize) -> Option<String> {
-                            for c in ctrls {
-                                match c {
-                                    ocs_plugin_api::dialog::DialogControl::Choice { id, options, .. } if id == cid => {
-                                        return options.get(idx).cloned();
-                                    }
-                                    ocs_plugin_api::dialog::DialogControl::Fields { controls, .. }
-                                    | ocs_plugin_api::dialog::DialogControl::Row { controls, .. }
-                                    | ocs_plugin_api::dialog::DialogControl::Column { controls, .. } => {
-                                        if let Some(o) = find_choice(controls, cid, idx) {
-                                            return Some(o);
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            None
-                        }
-                        find_choice(&p.def.controls, &control_id, index)
-                    }).unwrap_or_default()
-                };
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    panel.choice_values.insert(control_id.clone(), index);
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    control_id,
-                    "change".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Choice {
-                        index,
-                        text: choice_text,
-                    }),
-                );
-                Task::none()
-            }
-            Message::PluginPanelSectionToggle(panel_id, section_id) => {
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    if panel.collapsed_sections.contains(&section_id) {
-                        panel.collapsed_sections.remove(&section_id);
-                    } else {
-                        panel.collapsed_sections.insert(section_id);
-                    }
-                }
-                Task::none()
-            }
-            Message::PluginPanelTableCellChange(panel_id, table_id, row, col, val) => {
-                let mut current_rows = Vec::new();
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    if let Some(rows) = panel.table_values.get_mut(&table_id) {
-                        if let Some(r) = rows.get_mut(row) {
-                            if let Some(c) = r.get_mut(col) {
-                                *c = val.clone();
-                            }
-                        }
-                        current_rows = rows.clone();
-                    }
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    table_id,
-                    "cell_change".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Table(current_rows)),
-                );
-                Task::none()
-            }
-            Message::PluginPanelTableAddRow(panel_id, table_id) => {
-                let mut current_rows = Vec::new();
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    fn find_table_cols(ctrls: &[ocs_plugin_api::dialog::DialogControl], target: &str) -> Option<usize> {
-                        for c in ctrls {
-                            match c {
-                                ocs_plugin_api::dialog::DialogControl::Table { id, headers, .. } if id == target => {
-                                    return Some(headers.len());
-                                }
-                                ocs_plugin_api::dialog::DialogControl::Fields { controls, .. }
-                                | ocs_plugin_api::dialog::DialogControl::Row { controls, .. }
-                                | ocs_plugin_api::dialog::DialogControl::Column { controls, .. } => {
-                                    if let Some(res) = find_table_cols(controls, target) {
-                                        return Some(res);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        None
-                    }
-                    let col_count = find_table_cols(&panel.def.controls, &table_id).unwrap_or(2);
-                    let rows = panel.table_values.entry(table_id.clone()).or_default();
-                    rows.push(vec![String::new(); col_count]);
-                    current_rows = rows.clone();
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    table_id,
-                    "add_row".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Table(current_rows)),
-                );
-                Task::none()
-            }
-            Message::PluginPanelTableRemoveRow(panel_id, table_id, row_idx) => {
-                let mut current_rows = Vec::new();
-                if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                    if let Some(rows) = panel.table_values.get_mut(&table_id) {
-                        if row_idx < rows.len() {
-                            rows.remove(row_idx);
-                        }
-                        current_rows = rows.clone();
-                    }
-                }
-                crate::plugin::v4_support::publish_panel_action(
-                    panel_id,
-                    table_id,
-                    "remove_row".to_string(),
-                    Some(ocs_plugin_api::dialog::DialogValue::Table(current_rows)),
-                );
-                Task::none()
-            }
-            Message::PluginPanelFilePick(panel_id, control_id) => {
-                let pid = panel_id.clone();
-                let cid = control_id.clone();
-                iced::Task::perform(
-                    async move {
-                        let dialog = rfd::AsyncFileDialog::new();
-                        let handle = dialog.pick_file().await;
-                        handle.map(|h| crate::sys::handle_path(&h))
-                    },
-                    move |path| Message::PluginPanelFilePicked(pid, cid, path),
-                )
-            }
-            Message::PluginPanelFilePicked(panel_id, control_id, path) => {
-                if let Some(p) = path {
-                    let s = p.to_string_lossy().to_string();
-                    if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                        panel.file_values.insert(control_id.clone(), s.clone());
-                    }
-                    crate::plugin::v4_support::publish_panel_action(
-                        panel_id,
-                        control_id,
-                        "file_picked".to_string(),
-                        Some(ocs_plugin_api::dialog::DialogValue::FilePath(s)),
-                    );
-                }
-                Task::none()
-            }
-
             // ── Document tabs ─────────────────────────────────────────────
             Message::TabNew => {
                 self.close_table_cell_editor();
@@ -3740,14 +2856,12 @@ impl OpenCADStudio {
                 Task::none()
             }
 
-            // API v11: keep the active custom-grip drag's coalesced move
-            // channel flowing without ever blocking the app loop on plugin
-            // latency.
-            #[cfg(not(target_arch = "wasm32"))]
-            Message::PluginGripPump => self.pump_plugin_grips(),
-
             Message::TabClose(tab_id) => {
-                if self.table_cell_editor.as_ref().is_some_and(|cell| cell.tab_id == tab_id) {
+                if self
+                    .table_cell_editor
+                    .as_ref()
+                    .is_some_and(|cell| cell.tab_id == tab_id)
+                {
                     self.close_table_cell_editor();
                 }
                 self.hovered_doc_tab = None;
@@ -3875,7 +2989,9 @@ impl OpenCADStudio {
                 let s = if text_with_spaces || !s.contains(['\r', '\n', '\t']) {
                     s
                 } else {
-                    s.replace("\r\n", " ").replace(['\r', '\n'], " ").replace('\t', ",")
+                    s.replace("\r\n", " ")
+                        .replace(['\r', '\n'], " ")
+                        .replace('\t', ",")
                 };
                 let active_prompt = self.tabs[self.active_tab].active_cmd.is_some();
                 let literal = self.command_line.literal_spaces || s.starts_with('>');
@@ -4121,9 +3237,11 @@ impl OpenCADStudio {
                     if self.layer_walk_owns_arrows() {
                         match direction {
                             ArrowKey::Up => {
-                                return self.on_layer_walk(crate::ui::window::layer_walk::LayerWalkMsg::KeyNav {
-                                    up: true,
-                                })
+                                return self.on_layer_walk(
+                                    crate::ui::window::layer_walk::LayerWalkMsg::KeyNav {
+                                        up: true,
+                                    },
+                                )
                             }
                             ArrowKey::Down => {
                                 return self.on_layer_walk(
@@ -4138,7 +3256,8 @@ impl OpenCADStudio {
                     // …or maybe the QuickCalc input, whose ↑/↓ step through
                     // its history.
                     let up = matches!(direction, ArrowKey::Up);
-                    if !self.quick_calc.show || !matches!(direction, ArrowKey::Up | ArrowKey::Down) {
+                    if !self.quick_calc.show || !matches!(direction, ArrowKey::Up | ArrowKey::Down)
+                    {
                         return Task::none();
                     }
                     return iced::widget::operation::is_focused(iced::widget::Id::new(
@@ -4188,8 +3307,12 @@ impl OpenCADStudio {
                     match direction {
                         ArrowKey::Up => return self.table_editor_step(-1, 0, false),
                         ArrowKey::Down => return self.table_editor_step(1, 0, false),
-                        ArrowKey::Left if ed.caret == 0 => return self.table_editor_step(0, -1, false),
-                        ArrowKey::Right if ed.caret == self.mtext_vis_count() => return self.table_editor_step(0, 1, false),
+                        ArrowKey::Left if ed.caret == 0 => {
+                            return self.table_editor_step(0, -1, false)
+                        }
+                        ArrowKey::Right if ed.caret == self.mtext_vis_count() => {
+                            return self.table_editor_step(0, 1, false)
+                        }
                         _ => {}
                     }
                 }
@@ -5122,15 +4245,20 @@ impl OpenCADStudio {
                     super::LayerStateProperty::Frozen => document::LayerStateMask::FROZEN,
                     super::LayerStateProperty::Locked => document::LayerStateMask::LOCKED,
                     super::LayerStateProperty::Plot => document::LayerStateMask::PLOT,
-                    super::LayerStateProperty::NewViewport => document::LayerStateMask::NEW_VIEWPORT,
+                    super::LayerStateProperty::NewViewport => {
+                        document::LayerStateMask::NEW_VIEWPORT
+                    }
                     super::LayerStateProperty::Color => document::LayerStateMask::COLOR,
                     super::LayerStateProperty::LineType => document::LayerStateMask::LINE_TYPE,
                     super::LayerStateProperty::LineWeight => document::LayerStateMask::LINE_WEIGHT,
                     super::LayerStateProperty::PlotStyle => document::LayerStateMask::PLOT_STYLE,
-                    super::LayerStateProperty::Transparency => document::LayerStateMask::TRANSPARENCY,
+                    super::LayerStateProperty::Transparency => {
+                        document::LayerStateMask::TRANSPARENCY
+                    }
                 };
                 if let Some(state) = self.layer_state_edit_draft.as_mut() {
-                    state.mask = document::LayerStateMask::from_bits(state.mask.bits() ^ flag.bits());
+                    state.mask =
+                        document::LayerStateMask::from_bits(state.mask.bits() ^ flag.bits());
                 }
                 Task::none()
             }
@@ -5426,7 +4554,12 @@ impl OpenCADStudio {
                 let mut targets = self.layer_row_action_targets(i, idx);
                 // The current layer can't be frozen; thawing it is fine.
                 if frozen == Some(true) {
-                    let current = self.tabs[i].scene.document.header.current_layer_name.clone();
+                    let current = self.tabs[i]
+                        .scene
+                        .document
+                        .header
+                        .current_layer_name
+                        .clone();
                     let before = targets.len();
                     targets.retain(|name| !name.eq_ignore_ascii_case(&current));
                     if targets.len() < before {
@@ -6648,8 +5781,10 @@ impl OpenCADStudio {
                     match tab.scene.scale_target_viewport() {
                         None => {
                             self.command_line.push_error(
-                                crate::t!("Select a viewport or double-click into one to set its scale.")
-                                    .as_ref(),
+                                crate::t!(
+                                    "Select a viewport or double-click into one to set its scale."
+                                )
+                                .as_ref(),
                             );
                             return Task::none();
                         }
@@ -6809,7 +5944,10 @@ impl OpenCADStudio {
                     return Task::none();
                 }
                 let url = self.hyperlink_editor_url.trim().to_owned();
-                if self.hyperlink_editor_mixed && url.is_empty() && !self.hyperlink_options.view_target {
+                if self.hyperlink_editor_mixed
+                    && url.is_empty()
+                    && !self.hyperlink_options.view_target
+                {
                     self.command_line.push_info(
                         crate::t!("Enter a URL, or use Remove to clear all hyperlinks.").as_ref(),
                     );
@@ -7383,12 +6521,13 @@ impl OpenCADStudio {
                     self.hyperlink_editor_mixed = false;
                     self.hyperlink_editor_dirty = false;
                     self.hyperlink_editor_handles.clear();
-                    self.hyperlink_options = crate::ui::window::hyperlink_dialog::HyperlinkOptions {
-                        edit: !self.hyperlink_editor_url.is_empty(),
-                        dwf: true,
-                        address_only: true,
-                        ..Default::default()
-                    };
+                    self.hyperlink_options =
+                        crate::ui::window::hyperlink_dialog::HyperlinkOptions {
+                            edit: !self.hyperlink_editor_url.is_empty(),
+                            dwf: true,
+                            address_only: true,
+                            ..Default::default()
+                        };
                     self.active_modal = Some(crate::app::ModalKind::Hyperlink);
                 }
                 Task::none()
@@ -8263,34 +7402,50 @@ impl OpenCADStudio {
                             self.tabs[i].dirty = true;
                         }
                     }
-                    _ => self.command_line.push_rejection(
-                        crate::t!("Cannot set TEXTSIZE to that value.").as_ref(),
-                    ),
+                    _ => self
+                        .command_line
+                        .push_rejection(crate::t!("Cannot set TEXTSIZE to that value.").as_ref()),
                 }
                 self.sync_frame_dropdown();
                 Task::none()
             }
-            Message::RibbonTextHeightFocus => iced::widget::operation::focus(iced::widget::Id::new(
-                crate::ui::ribbon::widgets::TEXT_HEIGHT_ID,
-            )),
+            Message::RibbonTextHeightFocus => iced::widget::operation::focus(
+                iced::widget::Id::new(crate::ui::ribbon::widgets::TEXT_HEIGHT_ID),
+            ),
             Message::RibbonDimLayer(layer) => {
                 self.ribbon.close_dropdown();
-                let value = if layer.is_empty() { ".".to_string() } else { layer };
+                let value = if layer.is_empty() {
+                    ".".to_string()
+                } else {
+                    layer
+                };
                 self.dispatch_command(&format!("DIMLAYER {value}"))
             }
             Message::RibbonMLeaderLayer(layer) => {
                 self.ribbon.close_dropdown();
-                let value = if layer.is_empty() { ".".to_string() } else { layer };
+                let value = if layer.is_empty() {
+                    ".".to_string()
+                } else {
+                    layer
+                };
                 self.dispatch_command(&format!("MLEADERLAYER {value}"))
             }
             Message::RibbonCenterLayer(layer) => {
                 self.ribbon.close_dropdown();
-                let value = if layer.is_empty() { ".".to_string() } else { layer };
+                let value = if layer.is_empty() {
+                    ".".to_string()
+                } else {
+                    layer
+                };
                 self.dispatch_command(&format!("CENTERLAYER {value}"))
             }
             Message::RibbonTextLayer(layer) => {
                 self.ribbon.close_dropdown();
-                let value = if layer.is_empty() { ".".to_string() } else { layer };
+                let value = if layer.is_empty() {
+                    ".".to_string()
+                } else {
+                    layer
+                };
                 self.dispatch_command(&format!("TEXTLAYER {value}"))
             }
             Message::XrefFadeToggle => {
@@ -8409,8 +7564,13 @@ impl OpenCADStudio {
                     return self.cycle_grip_ctrl_mode();
                 }
                 if ctrl_changed && self.tabs[i].active_cmd.is_some() {
-                    if ctrl && self.tabs[i].active_cmd.as_mut().is_some_and(|command| command.cycle_insertion_point()) {
-                        if let Some(command)=self.tabs[i].active_cmd.as_ref() {
+                    if ctrl
+                        && self.tabs[i]
+                            .active_cmd
+                            .as_mut()
+                            .is_some_and(|command| command.cycle_insertion_point())
+                    {
+                        if let Some(command) = self.tabs[i].active_cmd.as_ref() {
                             self.command_line.push_info(&command.prompt());
                         }
                         self.refresh_active_cmd_preview(i);
@@ -9565,7 +8725,8 @@ impl OpenCADStudio {
                     let len = crate::ui::properties::filtered_hatch_patterns(&editor.search).len();
                     if len > 0 {
                         editor.focus = (editor.focus as isize + delta as isize)
-                            .rem_euclid(len as isize) as usize;
+                            .rem_euclid(len as isize)
+                            as usize;
                     }
                     return Task::none();
                 }
@@ -9609,7 +8770,8 @@ impl OpenCADStudio {
                 }
                 let i = self.active_tab;
                 let handles = self.property_target_handles(i);
-                if crate::app::properties::field_moves_geometry(field) && self.any_entity_is_fixed(i, &handles)
+                if crate::app::properties::field_moves_geometry(field)
+                    && self.any_entity_is_fixed(i, &handles)
                 {
                     self.command_line
                         .push_error(crate::app::properties::HELD_BY_FIXED);
@@ -9849,7 +9011,10 @@ impl OpenCADStudio {
             Message::PropGeomCommit(field) => self.on_prop_geom_commit(field),
             Message::PropBlockInput { key, value } => {
                 if self.block_property_target_is_current(key) {
-                    self.tabs[self.active_tab].properties.edit_buf.insert(crate::ui::properties::FieldKey::BlockParameter(key), value);
+                    self.tabs[self.active_tab]
+                        .properties
+                        .edit_buf
+                        .insert(crate::ui::properties::FieldKey::BlockParameter(key), value);
                 }
                 Task::none()
             }
@@ -9944,16 +9109,6 @@ impl OpenCADStudio {
 
             Message::PropAttrCommit(tag) => self.on_prop_attr_commit(tag),
 
-            Message::PropPluginParamInput { name, value } => {
-                self.tabs[self.active_tab]
-                    .properties
-                    .edit_buf
-                    .insert(crate::ui::properties::plugin_param_edit_key(&name), value);
-                Task::none()
-            }
-
-            Message::PropPluginParamCommit(name) => self.on_prop_plugin_param_commit(name),
-
             Message::PropPointerPressed => {
                 // A press anywhere ends typing in QuickCalc; its own
                 // buttons set it again after their release.
@@ -9963,7 +9118,11 @@ impl OpenCADStudio {
                 } else {
                     Task::none()
                 };
-                if self.tabs[self.active_tab].layers.transparency_edit.is_some() {
+                if self.tabs[self.active_tab]
+                    .layers
+                    .transparency_edit
+                    .is_some()
+                {
                     rename_blur = Task::batch([
                         rename_blur,
                         crate::ui::properties::focused_widget_task(Message::LayerTransparencyFocus),
@@ -9981,7 +9140,11 @@ impl OpenCADStudio {
                         crate::ui::properties::focused_widget_task(Message::StyleRenameFocus),
                     ]);
                 }
-                if self.tabs[self.active_tab].parameters_panel.editing.is_some() {
+                if self.tabs[self.active_tab]
+                    .parameters_panel
+                    .editing
+                    .is_some()
+                {
                     rename_blur = Task::batch([
                         rename_blur,
                         crate::ui::properties::focused_widget_task(Message::ParametersManagerFocus),
@@ -10819,9 +9982,10 @@ impl OpenCADStudio {
                         "shortcuts",
                     )
                 };
-                let table: Vec<Vec<String>> = std::iter::once(header.map(|h| h.into_owned()).to_vec())
-                    .chain(rows.iter().map(|(a, b)| vec![a.clone(), b.clone()]))
-                    .collect();
+                let table: Vec<Vec<String>> =
+                    std::iter::once(header.map(|h| h.into_owned()).to_vec())
+                        .chain(rows.iter().map(|(a, b)| vec![a.clone(), b.clone()]))
+                        .collect();
                 #[cfg(target_arch = "wasm32")]
                 {
                     // The web build downloads it as a workbook.
@@ -10971,52 +10135,87 @@ impl OpenCADStudio {
             }
             Message::BlockCycleSelect(index) => {
                 if let Some(state) = self.block_cycle_order.as_mut() {
-                    if index < state.rows.len() { state.selected = Some(index); }
+                    if index < state.rows.len() {
+                        state.selected = Some(index);
+                    }
                 }
                 Task::none()
             }
             Message::BlockCycleEnable(index, enabled) => {
-                if let Some(state)=self.block_cycle_order.as_mut() {
-                    if let Some(row)=state.rows.get_mut(index) { row.enabled=enabled; state.selected=Some(index); }
-                    state.error=None;
+                if let Some(state) = self.block_cycle_order.as_mut() {
+                    if let Some(row) = state.rows.get_mut(index) {
+                        row.enabled = enabled;
+                        state.selected = Some(index);
+                    }
+                    state.error = None;
                 }
                 Task::none()
             }
             Message::BlockCycleMove(index, up) => {
-                if let Some(state)=self.block_cycle_order.as_mut() {
-                    let target=if up { index.checked_sub(1) } else { index.checked_add(1) };
-                    if let Some(target)=target.filter(|target| *target<state.rows.len() && index<state.rows.len()) {
-                        state.rows.swap(index,target);
+                if let Some(state) = self.block_cycle_order.as_mut() {
+                    let target = if up {
+                        index.checked_sub(1)
+                    } else {
+                        index.checked_add(1)
+                    };
+                    if let Some(target) = target
+                        .filter(|target| *target < state.rows.len() && index < state.rows.len())
+                    {
+                        state.rows.swap(index, target);
                         state.selected = state.selected.map(|selected| {
-                            if selected == index { target } else if selected == target { index } else { selected }
+                            if selected == index {
+                                target
+                            } else if selected == target {
+                                index
+                            } else {
+                                selected
+                            }
                         });
-                        state.error=None;
+                        state.error = None;
                     }
                 }
                 Task::none()
             }
             Message::BlockCycleApply => self.apply_block_cycle_order(),
-            Message::BlockActionBarSelect(handle) => self.handle_action_bar(handle,false),
-            Message::BlockActionBarEdit(handle) => self.handle_action_bar(handle,true),
-            Message::BlockActionBarMove(handle,offset) => { self.move_action_bar(handle,offset); Task::none() }
+            Message::BlockActionBarSelect(handle) => self.handle_action_bar(handle, false),
+            Message::BlockActionBarEdit(handle) => self.handle_action_bar(handle, true),
+            Message::BlockActionBarMove(handle, offset) => {
+                self.move_action_bar(handle, offset);
+                Task::none()
+            }
             Message::BlockActionBarHide(handle) => {
-                let i=self.active_tab;
-                if self.action_bar_error().is_none() && self.tabs[i].active_cmd.is_none()
-                    && self.tabs[i].active_block_edit_session().is_some_and(|session| crate::scene::block_action_bars::groups(&self.tabs[i].scene.document,session.br_handle).iter().any(|group| group.parameter==handle)) {
+                let i = self.active_tab;
+                if self.action_bar_error().is_none()
+                    && self.tabs[i].active_cmd.is_none()
+                    && self.tabs[i]
+                        .active_block_edit_session()
+                        .is_some_and(|session| {
+                            crate::scene::block_action_bars::groups(
+                                &self.tabs[i].scene.document,
+                                session.br_handle,
+                            )
+                            .iter()
+                            .any(|group| group.parameter == handle)
+                        })
+                {
                     self.tabs[i].action_bars.hidden.insert(handle);
                 }
                 Task::none()
             }
             Message::BlockEditorSettingsInput(index, value) => {
                 if let Some(state) = &mut self.block_editor_settings {
-                    if let Some(field) = state.values.get_mut(index) { *field = value; }
+                    if let Some(field) = state.values.get_mut(index) {
+                        *field = value;
+                    }
                     state.error = None;
                 }
                 Task::none()
             }
             Message::BlockConstraintColorInput(index, value) => {
                 if let Some(state) = &mut self.block_editor_settings {
-                    if let Some(color) = state.constraint_colors.get_mut(index) { *color = value; }
+                    if let Some(color) = state.constraint_colors.get_mut(index) {
+                        *color = value;
+                    }
                     state.error = None;
                 }
                 Task::none()
@@ -11024,7 +10223,10 @@ impl OpenCADStudio {
             Message::ToggleBlockConstraintStatus => self.dispatch_command("BCONSTATUSMODE TOGGLE"),
             Message::BlockEditorSettingsReset => {
                 if self.block_editor_settings.is_some() {
-                    self.block_editor_settings = Some(crate::ui::window::block_editor_settings::State::new(&super::settings::BlockEditorPreferences::default()));
+                    self.block_editor_settings =
+                        Some(crate::ui::window::block_editor_settings::State::new(
+                            &super::settings::BlockEditorPreferences::default(),
+                        ));
                 }
                 Task::none()
             }
@@ -11032,7 +10234,10 @@ impl OpenCADStudio {
                 if self.active_modal == Some(super::ModalKind::BlockEditorSettings) {
                     if let Some(state) = &mut self.block_editor_settings {
                         let mut staged = self.block_editor_preferences.clone();
-                        for ((name, _), value) in super::settings::BLOCK_DISPLAY_VARIABLES.iter().zip(&state.values) {
+                        for ((name, _), value) in super::settings::BLOCK_DISPLAY_VARIABLES
+                            .iter()
+                            .zip(&state.values)
+                        {
                             if let Err(error) = staged.set_display_variable(name, value) {
                                 state.error = Some(format!("{name}: {}", crate::t!(error)));
                                 return Task::none();
@@ -11040,7 +10245,9 @@ impl OpenCADStudio {
                         }
                         for (index, value) in state.constraint_colors.iter().enumerate() {
                             let normalized = crate::ui::overlay::authoring::normalize_color(value);
-                            let Some(color) = normalized.filter(|value| value != "BYLAYER" && value != "BYBLOCK") else {
+                            let Some(color) =
+                                normalized.filter(|value| value != "BYLAYER" && value != "BYBLOCK")
+                            else {
                                 state.error = Some(crate::t!("Constraint colors require an index from 1 to 255 or RGB:r,g,b.").into_owned());
                                 return Task::none();
                             };
@@ -11188,8 +10395,10 @@ impl OpenCADStudio {
             }
 
             Message::ApertureChanged(value) => {
-                self.snapper.osnap_radius_px = (value as f32)
-                    .clamp(crate::snap::MIN_OSNAP_RADIUS_PX, crate::snap::MAX_OSNAP_RADIUS_PX);
+                self.snapper.osnap_radius_px = (value as f32).clamp(
+                    crate::snap::MIN_OSNAP_RADIUS_PX,
+                    crate::snap::MAX_OSNAP_RADIUS_PX,
+                );
                 self.persist_settings_if_changed();
                 Task::none()
             }
@@ -11936,7 +11145,9 @@ impl OpenCADStudio {
                         self.persist_settings_if_changed();
                         // Ribbon labels are built in the language they were
                         // made in; rebuild them so no restart is needed.
-                        self.rebuild_ribbon_modules();
+                        self.ribbon
+                            .set_modules(crate::modules::registry::all_modules());
+                        self.command_line.dynamic_commands.clear();
                         #[cfg(target_arch = "wasm32")]
                         {
                             let script = crate::scene::text::web_font::preload_language(
@@ -12008,9 +11219,6 @@ impl OpenCADStudio {
                 }
                 if self.active_modal == Some(super::ModalKind::ImageAdjust) {
                     self.image_adjust = None;
-                }
-                if self.active_modal == Some(super::ModalKind::PluginDialog) {
-                    return self.update(Message::PluginDialogCancel);
                 }
                 if self.active_modal == Some(super::ModalKind::Field) {
                     self.close_field_dialog();
@@ -12693,364 +11901,10 @@ impl OpenCADStudio {
                 }
             }
 
-            // ── Plugin Manager window ─────────────────────────────────────
-            Message::PluginManagerOpen => {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    self.active_modal = Some(super::ModalKind::PluginManager);
-                    return Task::none();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    // Refresh the on-disk external-plugin list each time the manager
-                    // opens so newly dropped-in packages show up.
-                    self.external_plugins = crate::plugin::external::discover();
-                    self.marketplace_status.clear();
-                    self.active_modal = Some(super::ModalKind::PluginManager);
-                    // Fetch the curated registry and release lists for linked repos.
-                    self.plugin_registry_loading = true;
-                    self.plugin_registry_error = None;
-                    self.plugin_registry_error_details_open = false;
-                    let mut tasks = vec![self.fetch_registry_task()];
-                    let release_repos: rustc_hash::FxHashSet<String> = self
-                        .plugin_repos
-                        .iter()
-                        .cloned()
-                        .chain(
-                            self.external_plugins
-                                .iter()
-                                .filter_map(|plugin| plugin.repository.clone()),
-                        )
-                        .collect();
-                    tasks.extend(
-                        release_repos
-                            .into_iter()
-                            .map(|r| self.fetch_releases_task(r)),
-                    );
-                    if self.selected_plugin_repo.is_none() {
-                        self.selected_plugin_repo = self
-                            .external_plugins
-                            .iter()
-                            .find_map(|plugin| plugin.repository.clone())
-                            .or_else(|| {
-                                self.plugin_registry.first().map(|entry| entry.repo.clone())
-                            })
-                            .or_else(|| self.plugin_repos.first().cloned());
-                    }
-                    if let Some(repo) = self.selected_plugin_repo.clone() {
-                        if !self.plugin_readmes.contains_key(&repo)
-                            && self.plugin_readme_loading.insert(repo.clone())
-                        {
-                            tasks.push(self.fetch_plugin_readme_task(repo));
-                        }
-                    }
-                    return Task::batch(tasks);
-                }
-            }
-            Message::PluginManagerClose => {
-                self.close_active_modal();
-                Task::none()
-            }
-            Message::SetPluginEnabled(id, enabled) => {
-                if enabled {
-                    self.disabled_plugins.remove(&id);
-                } else {
-                    self.disabled_plugins.insert(id);
-                }
-                self.rebuild_ribbon_modules();
-                self.persist_settings_if_changed();
-                Task::none()
-            }
-            Message::PluginRepoInput(s) => {
-                self.plugin_repo_input = s;
-                Task::none()
-            }
-            Message::PluginSearchInput(s) => {
-                self.plugin_search_input = s;
-                Task::none()
-            }
-            Message::PluginRepoAdd => {
-                let Some(repo) =
-                    crate::plugin::external::normalize_repository(&self.plugin_repo_input)
-                else {
-                    self.marketplace_status =
-                        crate::t!("Enter a GitHub URL or repository in owner/repo format.")
-                            .into_owned();
-                    return Task::none();
-                };
-                if self.plugin_repos.contains(&repo)
-                    || self.plugin_registry.iter().any(|entry| entry.repo == repo)
-                {
-                    self.marketplace_status =
-                        crate::tf!("{repo} is already in the catalog.").into_owned();
-                    self.selected_plugin_repo = Some(repo.clone());
-                    if !self.plugin_readmes.contains_key(&repo)
-                        && self.plugin_readme_loading.insert(repo.clone())
-                    {
-                        return self.fetch_plugin_readme_task(repo);
-                    }
-                    return Task::none();
-                }
-                if self
-                    .external_plugins
-                    .iter()
-                    .any(|plugin| plugin.repository.as_deref() == Some(repo.as_str()))
-                {
-                    self.marketplace_status =
-                        crate::tf!("{repo} is already installed.").into_owned();
-                    self.selected_plugin_repo = Some(repo.clone());
-                    if !self.plugin_readmes.contains_key(&repo)
-                        && self.plugin_readme_loading.insert(repo.clone())
-                    {
-                        return self.fetch_plugin_readme_task(repo);
-                    }
-                    return Task::none();
-                }
-                self.plugin_repos.push(repo.clone());
-                self.plugin_repo_input.clear();
-                self.persist_settings_if_changed();
-                self.marketplace_status = crate::tf!("Fetching releases for {repo}…").into_owned();
-                self.selected_plugin_repo = Some(repo.clone());
-                self.plugin_readmes.remove(&repo);
-                self.plugin_readme_loading.insert(repo.clone());
-                Task::batch(vec![
-                    self.fetch_releases_task(repo.clone()),
-                    self.fetch_plugin_readme_task(repo),
-                ])
-            }
-            Message::PluginRepoRemove(repo) => {
-                self.plugin_repos.retain(|r| r != &repo);
-                self.repo_release_tags.remove(&repo);
-                self.repo_selected_tag.remove(&repo);
-                if self.selected_plugin_repo.as_deref() == Some(repo.as_str())
-                    && !self.plugin_registry.iter().any(|entry| entry.repo == repo)
-                {
-                    self.selected_plugin_repo =
-                        self.plugin_registry.first().map(|entry| entry.repo.clone());
-                }
-                self.persist_settings_if_changed();
-                Task::none()
-            }
-            Message::PluginRegistryFetched(Ok(entries)) => {
-                self.plugin_registry_loading = false;
-                self.plugin_registry_error = None;
-                self.plugin_registry_error_details_open = false;
-                // Fetch releases for every curated repo so the dropdowns fill in.
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    if self.selected_plugin_repo.is_none() {
-                        self.selected_plugin_repo = self
-                            .external_plugins
-                            .iter()
-                            .find_map(|plugin| {
-                                plugin.repository.clone().or_else(|| {
-                                    entries
-                                        .iter()
-                                        .find(|entry| entry.name.eq_ignore_ascii_case(&plugin.name))
-                                        .map(|entry| entry.repo.clone())
-                                })
-                            })
-                            .or_else(|| entries.first().map(|entry| entry.repo.clone()));
-                    }
-                    let mut tasks: Vec<_> = entries
-                        .iter()
-                        .map(|e| self.fetch_releases_task(e.repo.clone()))
-                        .collect();
-                    self.plugin_registry = entries;
-                    if let Some(repo) = self.selected_plugin_repo.clone() {
-                        if !self.plugin_readmes.contains_key(&repo)
-                            && self.plugin_readme_loading.insert(repo.clone())
-                        {
-                            tasks.push(self.fetch_plugin_readme_task(repo));
-                        }
-                    }
-                    return Task::batch(tasks);
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    self.plugin_registry = entries;
-                    Task::none()
-                }
-            }
-            Message::PluginRegistryFetched(Err(e)) => {
-                self.plugin_registry_loading = false;
-                self.plugin_registry_error = Some(e);
-                self.plugin_registry_error_details_open = false;
-                Task::none()
-            }
-            Message::PluginRegistryRetry => {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    self.plugin_registry_loading = true;
-                    self.plugin_registry_error = None;
-                    self.plugin_registry_error_details_open = false;
-                    return self.fetch_registry_task();
-                }
-                #[cfg(target_arch = "wasm32")]
-                Task::none()
-            }
-            Message::PluginRegistryErrorDetailsToggle => {
-                if self.plugin_registry_error.is_some() {
-                    self.plugin_registry_error_details_open =
-                        !self.plugin_registry_error_details_open;
-                }
-                Task::none()
-            }
-            Message::PluginRegistryCopyDiagnostics => {
-                #[cfg(not(target_arch = "wasm32"))]
-                if let Some(error) = &self.plugin_registry_error {
-                    return iced::clipboard::write(format!(
-                        "Open CAD Studio v{}\nOS: {}\nArchitecture: {}\nRegistry: {}\nError: {}",
-                        env!("OCS_FULL_VERSION"),
-                        std::env::consts::OS,
-                        std::env::consts::ARCH,
-                        crate::plugin::marketplace::REGISTRY_URL,
-                        error,
-                    ))
-                    .discard();
-                }
-                Task::none()
-            }
-            Message::PatronsFetched(Ok(names)) => {
-                // Merge the hand-maintained supporters and rank everyone by
-                // amount (also sorts the web list, which arrives unsorted).
-                self.patrons = crate::patreon::merge_manual(names);
-                Task::none()
-            }
-            // No token / offline: still show any hand-maintained supporters
-            // (Start page shows a "Support on Patreon" prompt when empty).
-            Message::PatronsFetched(Err(_)) => {
-                self.patrons = crate::patreon::merge_manual(Vec::new());
-                Task::none()
-            }
-            Message::VideosFetched(Ok(videos)) => {
-                self.videos_loading = false;
-                self.set_videos(videos);
-                Task::none()
-            }
-            // Offline / markup change: keep whatever the on-disk cache seeded.
-            Message::VideosFetched(Err(_)) => {
-                self.videos_loading = false;
-                Task::none()
-            }
-            Message::DiscussionsFetched(Ok(discussions)) => {
-                self.discussions_loading = false;
-                self.discussions = discussions;
-                Task::none()
-            }
-            // Offline: keep the native cache (web leaves the panel empty).
-            Message::DiscussionsFetched(Err(_)) => {
-                self.discussions_loading = false;
-                Task::none()
-            }
             Message::RecentThumbsLoaded(thumbs) => {
                 for (path, handle) in thumbs {
                     self.recent_thumbs.insert(path, handle);
                 }
-                Task::none()
-            }
-            Message::PluginReleasesFetched(repo, Ok(releases)) => {
-                if let Some(first) = releases.first() {
-                    self.repo_selected_tag
-                        .entry(repo.clone())
-                        .or_insert_with(|| first.tag.clone());
-                }
-                if self.marketplace_status
-                    == crate::tf!("Fetching releases for {repo}…").into_owned()
-                {
-                    self.marketplace_status = crate::tf!(
-                        "Repository added. {} installable release(s) found.",
-                        releases.len()
-                    )
-                    .into_owned();
-                }
-                self.repo_release_tags.insert(repo, releases);
-                Task::none()
-            }
-            Message::PluginReleasesFetched(repo, Err(e)) => {
-                self.marketplace_status = format!("{repo}: {e}");
-                Task::none()
-            }
-            Message::PluginReleaseSelect(repo, tag) => {
-                self.repo_selected_tag.insert(repo, tag);
-                Task::none()
-            }
-            Message::PluginReadmeSelect(repo) => {
-                self.selected_plugin_repo = Some(repo.clone());
-                if self.plugin_readme_loading.contains(&repo) {
-                    return Task::none();
-                }
-                if matches!(self.plugin_readmes.get(&repo), Some(Ok(_))) {
-                    return Task::none();
-                }
-                // A second click on an error state acts as retry.
-                self.plugin_readmes.remove(&repo);
-                self.plugin_readme_loading.insert(repo.clone());
-                self.fetch_plugin_readme_task(repo)
-            }
-            Message::PluginReadmeFetched(repo, result) => {
-                self.plugin_readme_loading.remove(&repo);
-                self.plugin_readmes.insert(
-                    repo,
-                    result.map(|source| iced::widget::markdown::Content::parse(&source)),
-                );
-                Task::none()
-            }
-            Message::PluginInstall(repo) => {
-                let Some(tag) = self.repo_selected_tag.get(&repo).cloned() else {
-                    return Task::none();
-                };
-                self.marketplace_status = crate::tf!("Installing {repo} {tag}…").into_owned();
-                self.install_task(repo, tag)
-            }
-            Message::PluginUpdate(repo, tag) => {
-                self.marketplace_status = crate::tf!("Updating {repo} to {tag}…").into_owned();
-                self.install_task(repo, tag)
-            }
-            Message::PluginInstalled(Ok(id)) => {
-                self.marketplace_status =
-                    crate::tf!("Installed '{id}'. Restart to load it.").into_owned();
-                for id in id.split(", ") {
-                    self.plugin_load_errors.remove(id);
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    self.external_plugins = crate::plugin::external::discover();
-                }
-                Task::none()
-            }
-            Message::PluginInstalled(Err(e)) => {
-                self.marketplace_status = crate::tf!("Install failed: {e}").into_owned();
-                Task::none()
-            }
-            Message::PluginUninstall(id) => {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    // Stop the plugin runner first so Windows releases the DLL
-                    // and allows the package directory to be deleted.
-                    if !crate::plugin::external::remove_plugin(&id) {
-                        self.marketplace_status =
-                            crate::tf!("Uninstall failed: plugin '{id}' did not stop in time")
-                                .into_owned();
-                        return Task::none();
-                    }
-                    match crate::plugin::external::uninstall(&id) {
-                        Ok(()) => {
-                            self.marketplace_status =
-                                crate::tf!("Uninstalled '{id}'.").into_owned();
-                            self.plugin_load_errors.remove(&id);
-                            self.loaded_plugin_ids.remove(&id);
-                            self.rebuild_ribbon_modules();
-                            self.external_plugins = crate::plugin::external::discover();
-                        }
-                        Err(e) => {
-                            self.marketplace_status =
-                                crate::tf!("Uninstall failed: {e}").into_owned();
-                        }
-                    }
-                }
-                #[cfg(target_arch = "wasm32")]
-                let _ = id;
                 Task::none()
             }
             Message::PointStyleSetMode(mode) => {
@@ -13266,8 +12120,7 @@ impl OpenCADStudio {
                 // opened on before this click moves the field somewhere else.
                 let _ = self.commit_parameters_manager(false);
                 let i = self.active_tab;
-                let Some(definition) = self
-                    .tabs[i]
+                let Some(definition) = self.tabs[i]
                     .active_block_edit_session()
                     .map(|session| session.br_handle)
                 else {
@@ -13618,46 +12471,6 @@ impl OpenCADStudio {
             }
 
             // ── Page Setup ────────────────────────────────────────────────
-            Message::UpdateCheckResult(latest) => {
-                let Some(info) = latest else {
-                    return Task::none();
-                };
-                self.update_notice_version = Some(info.version);
-                self.update_notice_body = Some(info.body);
-                self.pending_startup_modals
-                    .push_back(super::ModalKind::UpdateNotice);
-                Task::none()
-            }
-            Message::UpdateCheckManual(latest) => {
-                let Some(info) = latest else {
-                    self.command_line.push_output(&crate::tr!(
-                        "view",
-                        "no-newer-release",
-                        version = env!("OCS_APP_VERSION")
-                    ));
-                    return Task::none();
-                };
-                self.update_notice_version = Some(info.version);
-                self.update_notice_body = Some(info.body);
-                self.active_modal = Some(super::ModalKind::UpdateNotice);
-                self.reset_modal_geometry();
-                Task::none()
-            }
-            Message::DonationPromptDonate => {
-                self.close_active_modal();
-                self.dispatch_view("DONATE", self.active_tab)
-                    .unwrap_or_else(Task::none)
-            }
-            Message::UpdateNoticeClose => {
-                self.close_active_modal();
-                Task::none()
-            }
-            Message::UpdateNoticeOpenRelease => {
-                let open =
-                    crate::sys::open_url(crate::io::update_check::DOWNLOAD_PAGE, self.main_window);
-                self.close_active_modal();
-                open
-            }
             Message::AssocPromptYes => {
                 self.file_assoc_enabled = true;
                 self.mark_assoc_prompted();
@@ -15359,12 +14172,11 @@ mod dock_visibility_tests {
     use crate::app::OpenCADStudio;
     use crate::ui::dock::PanelId;
 
-    const ALL: [PanelId; 8] = [
+    const ALL: [PanelId; 7] = [
         PanelId::Properties,
         PanelId::BlockPalette,
         PanelId::ExternalReferences,
         PanelId::Browser,
-        PanelId::NodeGraph,
         PanelId::PointCloudManager,
         PanelId::Count,
         PanelId::SheetSetManager,
@@ -15378,7 +14190,6 @@ mod dock_visibility_tests {
         app.show_block_palette = true;
         app.show_external_references = true;
         app.show_browser = true;
-        app.show_node_graph = true;
         app.pc_manager.show = true;
         app.count_palette.show = true;
         app.sheet_set.show = true;
@@ -15473,7 +14284,10 @@ mod free_text_entry_tests {
             .entities()
             .find_map(|entity| match entity {
                 document::EntityType::LwPolyline(p) => Some(
-                    p.vertices.iter().map(|v| (v.location.x, v.location.y)).collect(),
+                    p.vertices
+                        .iter()
+                        .map(|v| (v.location.x, v.location.y))
+                        .collect(),
                 ),
                 _ => None,
             })
@@ -15542,7 +14356,10 @@ mod free_text_entry_tests {
         assert_eq!(cell_text(&app, handle), "Keep me");
         assert!(app.tabs[0].active_cmd.is_some(), "Enter moves down a row");
         let _ = app.update(Message::CommandSubmit);
-        assert!(app.tabs[0].active_cmd.is_none(), "Enter on the last row ends the edit");
+        assert!(
+            app.tabs[0].active_cmd.is_none(),
+            "Enter on the last row ends the edit"
+        );
     }
 
     #[test]
@@ -15582,7 +14399,9 @@ mod free_text_entry_tests {
         let mut app = OpenCADStudio::new_for_test();
         app.automation_op(r#"{"op":"new"}"#);
         app.command_line.input = "EXISTING".into();
-        app.clipboard = vec![document::EntityType::Line(document::entities::Line::default())];
+        app.clipboard = vec![document::EntityType::Line(
+            document::entities::Line::default(),
+        )];
 
         // A dialog field pasted natively: no command-line text, no PASTECLIP.
         let _ = app.update(Message::PasteShortcutResolved(
@@ -15604,7 +14423,9 @@ mod free_text_entry_tests {
         assert!(app.tabs[0].active_cmd.is_none());
 
         // Copied objects paste even though the command line holds focus.
-        app.clipboard = vec![document::EntityType::Line(document::entities::Line::default())];
+        app.clipboard = vec![document::EntityType::Line(
+            document::entities::Line::default(),
+        )];
         let _ = app.update(Message::PasteShortcutResolved(PasteFocus::CommandLine));
         assert!(app.tabs[0]
             .active_cmd

@@ -10,7 +10,6 @@ Use [object snaps and typed coordinates](Precision-Drawing) to place points exac
 |---|---|---|---|
 | <img src="images/icons/line.svg" width="24" alt=""> | Line | `LINE` (`L`) | Separate straight segments, one per pair of points. `Undo` takes back the last one; Enter ends. |
 | <img src="images/icons/polyline.svg" width="24" alt=""> | Polyline | `PLINE` (`PL`) | One object of connected segments, straight or curved, with widths if you want them. |
-| <img src="images/icons/line.svg" width="24" alt=""> | 3D Polyline | `3DPOLY` | Connected straight segments whose points can be at any height. |
 | <img src="images/icons/xline.svg" width="24" alt=""> | Construction Line | `XLINE` (`XL`) | A line without ends, for layout. Options: **Hor**, **Ver**, **Ang**, **Bisect**, **Offset**. |
 | <img src="images/icons/ray.svg" width="24" alt=""> | Ray | `RAY` | A line with a start point that runs on without end. |
 | | Multiline | `MLINE` (`ML`) | Several parallel lines drawn at once, for walls and roads. Styles come from `MLSTYLE`. |

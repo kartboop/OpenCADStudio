@@ -1,6 +1,6 @@
+use super::*;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::io::plot_style::PlotStyleTableExt as _;
-use super::*;
 use crate::scene::model::object::PropValue;
 
 fn control_color(value: &Value) -> Result<document::types::Color, Value> {
@@ -114,13 +114,19 @@ pub(crate) fn property_json(p: &crate::scene::model::object::Property) -> Value 
         ),
         other => ("specialized", json!(format!("{other:?}")), Value::Null),
     };
-    let mut row = json!({"id":row_id(p),"label":p.label,"kind":kind,"value":value,"options":options});
-    if let PropValue::BlockNumber { key, description, .. }
-    | PropValue::BlockChoice { key, description, .. } = &p.value
+    let mut row =
+        json!({"id":row_id(p),"label":p.label,"kind":kind,"value":value,"options":options});
+    if let PropValue::BlockNumber {
+        key, description, ..
+    }
+    | PropValue::BlockChoice {
+        key, description, ..
+    } = &p.value
     {
         row["description"] = json!(description);
-        row["component"] =
-            json!(crate::scene::block_parameter_properties::component_id(&key.component));
+        row["component"] = json!(crate::scene::block_parameter_properties::component_id(
+            &key.component
+        ));
         row["parameter"] = json!(format!("{:X}", key.parameter.value()));
     }
     row
@@ -528,16 +534,13 @@ impl OpenCADStudio {
                 Some(base) => {
                     let mut base = base.clone();
                     crate::modules::insert::wblock::extract_entities_into(
-                        &document,
-                        &handles?,
-                        &mut base,
+                        &document, &handles?, &mut base,
                     )?;
                     Ok(base)
                 }
-                None => crate::modules::insert::wblock::extract_entities_to_doc(
-                    &document,
-                    &handles?,
-                ),
+                None => {
+                    crate::modules::insert::wblock::extract_entities_to_doc(&document, &handles?)
+                }
             }
         } else {
             return Err(failure(
@@ -940,32 +943,7 @@ impl OpenCADStudio {
                 })
             })
             .collect::<Vec<_>>();
-        // API v11: plugin-declared custom grips of the active tab, each marked
-        // with its owning plugin. `moves_entity` is false by construction —
-        // the host never moves anything for a custom grip; any edit is the
-        // plugin's own, at settle.
-        #[cfg(target_arch = "wasm32")]
-        let plugin_grips: Vec<Value> = Vec::new();
-        #[cfg(not(target_arch = "wasm32"))]
-        let visible = crate::plugin::grip_points::visibility(&self.disabled_plugins);
-        #[cfg(not(target_arch = "wasm32"))]
-        let plugin_grips = tab
-            .plugin_grips
-            .query_all(&visible)
-            .iter()
-            .map(|grip| {
-                json!({
-                    "plugin": grip.plugin,
-                    "grip_id": grip.grip_id,
-                    "handle": grip.anchor.map(|handle| format!("{:X}", handle.value())),
-                    "point": [grip.point.x, grip.point.y, grip.point.z],
-                    "shape": format!("{:?}", grip.shape),
-                    "moves_entity": false,
-                    "axis": grip.axis.map(|a| [a.x, a.y, a.z]),
-                })
-            })
-            .collect::<Vec<_>>();
-        json!({"ok": true, "grips": grips, "plugin_grips": plugin_grips})
+        json!({"ok": true, "grips": grips})
     }
 
     /// Drag one grip of an entity to a world point through the viewport's
@@ -978,14 +956,6 @@ impl OpenCADStudio {
         // routes to the plugin through the same live machinery the viewport
         // uses (begin → move → settle; preview frames flow; the settle is
         // the plugin's own one-undo-step write).
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(plugin) = req["plugin"].as_str() {
-            let grip_id = req["grip_id"]
-                .as_u64()
-                .ok_or_else(|| failure("invalid_request", "Missing grip_id"))?;
-            let to = point(req)?;
-            return self.control_plugin_grip_drag(i, plugin, grip_id, to.to_array());
-        }
         let target = handle(req)?;
         let grip_id = req["grip_id"]
             .as_u64()
@@ -994,51 +964,6 @@ impl OpenCADStudio {
         let to = point(req)?;
         self.perform_grip_drag(i, target, grip_id, to.to_array())
             .map_err(|(code, message)| failure(code, message))
-    }
-
-    /// The MCP/automation entry for a custom-grip drag (API v11/v12): drive
-    /// begin → move → settle through the same lifecycle the viewport runs,
-    /// so end-to-end tests exercise exactly one pipeline — including the
-    /// v11.1 hardening (deliveries never inline command frames; the settle
-    /// is issued without waiting; the watchdog bounds a plugin that never
-    /// answers). The op waits, bounded by the settle floor, for the final
-    /// result: the settle is the plugin's own one-undo-step write window,
-    /// and cancel paths are identical to interactive drags.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn control_plugin_grip_drag(
-        &mut self,
-        i: usize,
-        plugin: &str,
-        grip_id: u64,
-        to: [f64; 3],
-    ) -> Result<Task<Message>, Value> {
-        let candidate = {
-            let visible = crate::plugin::grip_points::visibility(&self.disabled_plugins);
-            self.tabs[i]
-                .plugin_grips
-                .find(plugin, grip_id, &visible)
-                .ok_or_else(|| {
-                    failure(
-                        "unknown_grip",
-                        "Read plugin_grips for the declaring plugin's grip ids",
-                    )
-                })?
-        };
-        // begin → move → settle(issued) → drive pump ticks until the settle
-        // finalizes (or the watchdog abandons it). Bounded — the UI route
-        // never waits, this automation route may.
-        let _ = self.begin_plugin_grip_drag(i, &candidate);
-        let _ = self.move_plugin_grip_drag(i, glam::DVec3::new(to[0], to[1], to[2]));
-        let _ = self.settle_plugin_grip_drag();
-        let completed =
-            self.drive_plugin_grip_settle_to_completion(std::time::Duration::from_secs(12));
-        if !completed {
-            return Err(failure(
-                "plugin_settle_timeout",
-                "The plugin did not settle its grip drag in time; the delivery was abandoned",
-            ));
-        }
-        Ok(iced::Task::none())
     }
 
     /// The shared programmatic grip-drag core — one pipeline, three
@@ -1066,7 +991,10 @@ impl OpenCADStudio {
         }
         // Picked cells of the target table stay picked: their grips are the
         // cell grips.
-        let cells = self.tabs[i].scene.table_cells.filter(|cells| cells.table == target);
+        let cells = self.tabs[i]
+            .scene
+            .table_cells
+            .filter(|cells| cells.table == target);
         self.tabs[i].scene.deselect_all();
         self.tabs[i].scene.select_entity(target, false);
         if let Some(cells) = cells {
@@ -1394,9 +1322,7 @@ impl OpenCADStudio {
                         let index = value.trim().parse::<usize>().ok()?;
                         (index < options.len()).then_some(index)
                     })
-                    .ok_or_else(|| {
-                        failure("invalid_choice", "Value is not an available option")
-                    })?;
+                    .ok_or_else(|| failure("invalid_choice", "Value is not an available option"))?;
                 self.update(Message::PropBlockChoice { key, index })
             }
             PropValue::ReadOnly(_) | PropValue::ReadOnlyWithTooltip { .. } => {
@@ -1413,9 +1339,7 @@ impl OpenCADStudio {
     pub(super) fn control_ui_action(&mut self, req: &Value) -> Result<Task<Message>, Value> {
         let name = string(req, "name")?;
         // Without a prompt there is no failed open to retry.
-        if name == "recovery_accept"
-            && !self.focus_dialog(crate::app::ModalKind::RecoveryPrompt)
-        {
+        if name == "recovery_accept" && !self.focus_dialog(crate::app::ModalKind::RecoveryPrompt) {
             return Ok(Task::none());
         }
         // The buttons of "the open dialog" press the front-most one when no
@@ -1938,7 +1862,10 @@ impl OpenCADStudio {
             // `select_objects`.
             "block_def_dialog" => {
                 if self.block_definition.is_none() {
-                    return Err(failure("no_dialog", "The Block Definition dialog is not open"));
+                    return Err(failure(
+                        "no_dialog",
+                        "The Block Definition dialog is not open",
+                    ));
                 }
                 let value = string(req, "value")?;
                 let (key, v) = value.split_once('=').unwrap_or((value, ""));
@@ -2148,7 +2075,9 @@ impl OpenCADStudio {
                     "precision" => F::FormulaPrecision(index(fd::FORMULA_PRECISIONS.len())?),
                     "link_text" => F::HyperlinkText(v.into()),
                     "link_url" => F::HyperlinkUrl(v.into()),
-                    "plot_scale" => F::PlotScale(index(document::fields::PLOT_SCALE_FORMATS.len())?),
+                    "plot_scale" => {
+                        F::PlotScale(index(document::fields::PLOT_SCALE_FORMATS.len())?)
+                    }
                     "count" => F::CountExpression(v.into()),
                     "show_instances" => F::ShowCountInstances,
                     "ss_custom" => F::SsCustom(v.into()),
@@ -2174,7 +2103,9 @@ impl OpenCADStudio {
                     "ss_prop" => F::SsProp(v.into()),
                     "ss_href" => F::SsHref(v == "1"),
                     "ss_placeholder" => F::SsPlaceholder(index(fd::PLACEHOLDER_TYPES.len())?),
-                    "ss_scale" => F::SsScaleFormat(index(document::fields::PLOT_SCALE_FORMATS.len())?),
+                    "ss_scale" => {
+                        F::SsScaleFormat(index(document::fields::PLOT_SCALE_FORMATS.len())?)
+                    }
                     "placeholder" => F::PlaceholderProperty(index(
                         document::fields::BLOCK_PLACEHOLDER_PROPERTIES.len(),
                     )?),
@@ -2486,7 +2417,10 @@ impl OpenCADStudio {
             "spell_dialog" => {
                 use crate::ui::window::spell_dialog::{SpellMsg as S, SpellScope, SpellSetting};
                 if !self.focus_dialog(crate::app::ModalKind::Spell) {
-                    return Err(failure("no_dialog", "The Check Spelling window is not open"));
+                    return Err(failure(
+                        "no_dialog",
+                        "The Check Spelling window is not open",
+                    ));
                 }
                 let spec = string(req, "value")?;
                 let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
@@ -2546,7 +2480,9 @@ impl OpenCADStudio {
             // "suffix=<s>", "decimal=0..2", "thousands=0..3",
             // "zero=4|8|1|2" (toggles); "ok" or "cancel".
             "table_cell_dialog" => {
-                use crate::ui::window::table_cell_dialog::{BorderSet as B, TableCellDialogMsg as T};
+                use crate::ui::window::table_cell_dialog::{
+                    BorderSet as B, TableCellDialogMsg as T,
+                };
                 if !matches!(
                     self.active_modal,
                     Some(crate::app::ModalKind::TableCellBorders)
@@ -2616,7 +2552,10 @@ impl OpenCADStudio {
             // "cancel" leaves the cells as they were.
             "table_cell_warning" => {
                 if !self.focus_dialog(crate::app::ModalKind::TableCellWarning) {
-                    return Err(failure("no_dialog", "The invalid data type warning is not open"));
+                    return Err(failure(
+                        "no_dialog",
+                        "The invalid data type warning is not open",
+                    ));
                 }
                 let spec = string(req, "value")?;
                 match spec {
@@ -2712,9 +2651,7 @@ impl OpenCADStudio {
                     "ok" => Message::HyperlinkApply,
                     "remove" => Message::HyperlinkRemove,
                     "cancel" => Message::HyperlinkCancel,
-                    _ => {
-                        return Err(failure("invalid_value", "Unknown Hyperlink window field"))
-                    }
+                    _ => return Err(failure("invalid_value", "Unknown Hyperlink window field")),
                 }
             }
             // The Edit Reference dialog, one field per call: "level=<n>" (0 =
@@ -2896,119 +2833,6 @@ impl OpenCADStudio {
                     _ => return Err(bad()),
                 })
             }
-            // The Import File window, one field per call: "path=<file>",
-            // "format=<index or name>", "search=<text>", "filter=all|supported",
-            // "recent=<n>", "ok" or "cancel".
-            "import_file_dialog" => {
-                use crate::ui::window::import_dialogs::{ImportDialogMsg as I, FORMATS};
-                if !self.focus_dialog(crate::app::ModalKind::ImportFile) {
-                    return Err(failure("no_dialog", "The Import File window is not open"));
-                }
-                let spec = string(req, "value")?;
-                let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
-                let bad = || failure("invalid_value", spec);
-                if key == "cancel" {
-                    return Ok(self.update(Message::CloseModal));
-                }
-                Message::ImportDialog(match key {
-                    "ok" => I::ImportOk,
-                    "path" => I::Path(value.to_string()),
-                    "search" => I::Search(value.to_string()),
-                    "filter" => I::OnlySupported(match value {
-                        "all" => false,
-                        "supported" => true,
-                        _ => return Err(bad()),
-                    }),
-                    "recent" => I::Recent(value.trim().parse().map_err(|_| bad())?),
-                    "format" => I::Format(match value.trim().parse::<usize>() {
-                        Ok(k) if k < FORMATS.len() => k,
-                        _ => FORMATS
-                            .iter()
-                            .position(|f| f.name.eq_ignore_ascii_case(value.trim()))
-                            .ok_or_else(bad)?,
-                    }),
-                    _ => return Err(bad()),
-                })
-            }
-            // The 3D Studio Import window, one field per call: "check=<name>"
-            // and "uncheck=<name>" (the object's name, or "Global Settings"),
-            // "all", "clear", "filter=all|mesh|light|camera|general",
-            // "search=<text>", "layers=object|material|color|single",
-            // "multi=ask|split|first|none", "path=<file>" (as Change… picks
-            // it), "ok" or "cancel".
-            "tds_import_dialog" => {
-                use crate::ui::window::import_dialogs::ImportDialogMsg as I;
-                if !self.focus_dialog(crate::app::ModalKind::TdsImport) {
-                    return Err(failure("no_dialog", "The 3D Studio Import window is not open"));
-                }
-                let spec = string(req, "value")?;
-                let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
-                let bad = || failure("invalid_value", spec);
-                if key == "cancel" {
-                    return Ok(self.update(Message::CloseModal));
-                }
-                let pick = |options: &[&str]| options.iter().position(|o| *o == value).ok_or_else(bad);
-                Message::ImportDialog(match key {
-                    "ok" => I::TdsOk,
-                    "all" => I::TdsAll,
-                    "clear" => I::TdsClear,
-                    "check" | "uncheck" => {
-                        let k = self
-                            .import_dialogs
-                            .tds
-                            .as_ref()
-                            .and_then(|s| s.objects.iter().position(|(name, _, _)| name.eq_ignore_ascii_case(value)))
-                            .ok_or_else(bad)?;
-                        I::TdsCheck(k, key == "check")
-                    }
-                    "filter" => I::TdsFilter(pick(&["all", "mesh", "light", "camera", "general"])?),
-                    "search" => I::TdsSearch(value.to_string()),
-                    "layers" => I::TdsLayers(pick(&["object", "material", "color", "single"])?),
-                    "multi" => I::TdsMulti(pick(&["ask", "split", "first", "none"])?),
-                    "path" => I::TdsPicked(Some(value.to_string())),
-                    _ => return Err(bad()),
-                })
-            }
-            // The multiple-material mesh window of a 3D Studio import, one
-            // field per call: "split", "first", "select",
-            // "material=<name>" ("material=" for no material; selects the
-            // choice too), "remember=on|off", "apply" or "cancel".
-            "tds_material_dialog" => {
-                use crate::ui::window::import_dialogs::ImportDialogMsg as I;
-                if !self.focus_dialog(crate::app::ModalKind::TdsMaterial) {
-                    return Err(failure("no_dialog", "The multiple-material window is not open"));
-                }
-                let spec = string(req, "value")?;
-                let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
-                let bad = || failure("invalid_value", spec);
-                Message::ImportDialog(match key {
-                    "split" => I::TdsMatChoice(0),
-                    "first" => I::TdsMatChoice(1),
-                    "select" => I::TdsMatChoice(2),
-                    "material" => {
-                        let k = if value.is_empty() {
-                            0
-                        } else {
-                            self.import_dialogs
-                                .tds_material
-                                .as_ref()
-                                .and_then(|s| s.queue.first())
-                                .and_then(|(_, m)| m.iter().position(|(name, _)| name.eq_ignore_ascii_case(value)))
-                                .map(|k| k + 1)
-                                .ok_or_else(bad)?
-                        };
-                        I::TdsMatPick(k)
-                    }
-                    "remember" => I::TdsMatRemember(match value {
-                        "on" | "1" | "true" => true,
-                        "off" | "0" | "false" => false,
-                        _ => return Err(bad()),
-                    }),
-                    "apply" | "ok" => I::TdsMatApply,
-                    "cancel" => return Ok(self.update(Message::CloseModal)),
-                    _ => return Err(bad()),
-                })
-            }
             // The Data Extraction wizard, one step per call: "next", "back",
             // "finish", "settings=<file.dxex>", "begin=new|template|edit",
             // "source=drawings|selection", "object=<name>:on|off",
@@ -3021,7 +2845,10 @@ impl OpenCADStudio {
                     DataExtractionField as F, ExtractionBegin, ExtractionSource,
                 };
                 if !self.focus_dialog(crate::app::ModalKind::DataExtraction) {
-                    return Err(failure("no_dialog", "The Data Extraction wizard is not open"));
+                    return Err(failure(
+                        "no_dialog",
+                        "The Data Extraction wizard is not open",
+                    ));
                 }
                 let spec = string(req, "value")?;
                 let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
@@ -3064,7 +2891,9 @@ impl OpenCADStudio {
                             .data_extraction
                             .properties
                             .iter()
-                            .position(|item| item.key == name || item.name.eq_ignore_ascii_case(name))
+                            .position(|item| {
+                                item.key == name || item.name.eq_ignore_ascii_case(name)
+                            })
                             .ok_or_else(bad)?;
                         Message::DataExtractionField(F::Property(index, on(state)?))
                     }
@@ -3244,7 +3073,10 @@ impl OpenCADStudio {
             "hatch_boundary_warning" => {
                 use crate::ui::window::hatch_dialogs::HatchDialogMsg as H;
                 if !self.focus_dialog(crate::app::ModalKind::HatchBoundaryWarning) {
-                    return Err(failure("no_dialog", "The hatch boundary warning is not open"));
+                    return Err(failure(
+                        "no_dialog",
+                        "The hatch boundary warning is not open",
+                    ));
                 }
                 let state = self.hatch_boundary_warning.clone().unwrap_or_default();
                 match string(req, "value")? {
@@ -3253,79 +3085,6 @@ impl OpenCADStudio {
                     "close" => Message::HatchDialog(H::WarningClose),
                     other => return Err(failure("invalid_value", other)),
                 }
-            }
-            "tds_map_dialog" => {
-                if !self.focus_dialog(crate::app::ModalKind::TdsMissingMap) {
-                    return Err(failure("no_dialog", "The missing texture map window is not open"));
-                }
-                let spec = string(req, "value")?;
-                match spec {
-                    "ok" | "close" => Message::CloseModal,
-                    _ => return Err(failure("invalid_value", spec)),
-                }
-            }
-            // The DGN Import window, one field per call: "path=<file>" (as
-            // Change… picks it), "model=<n>", "target=new|current",
-            // "conflict=prefix|ignore", "units=master|sub", "explode=on|off",
-            // "references=translate|ignore|underlay", "existing=prompt|overwrite|keep",
-            // "mapping=layer|linetype|lineweight|color", "ok" or "cancel".
-            "dgn_import_dialog" => {
-                use crate::ui::window::import_dialogs::ImportDialogMsg as I;
-                if !self.focus_dialog(crate::app::ModalKind::DgnImport) {
-                    return Err(failure("no_dialog", "The DGN Import window is not open"));
-                }
-                let spec = string(req, "value")?;
-                let (key, value) = spec.split_once('=').unwrap_or((spec, ""));
-                let bad = || failure("invalid_value", spec);
-                let on = |v: &str| match v {
-                    "on" | "1" | "true" => Ok(true),
-                    "off" | "0" | "false" => Ok(false),
-                    _ => Err(bad()),
-                };
-                if key == "cancel" {
-                    return Ok(self.update(Message::CloseModal));
-                }
-                Message::ImportDialog(match key {
-                    "ok" => I::DgnOk,
-                    "path" => I::DgnPicked(Some(value.to_string())),
-                    "model" => I::DgnModel(value.trim().parse().map_err(|_| bad())?),
-                    "target" => I::DgnCurrent(match value {
-                        "new" => false,
-                        "current" => true,
-                        _ => return Err(bad()),
-                    }),
-                    "conflict" => I::DgnPrefix(match value {
-                        "prefix" => true,
-                        "ignore" => false,
-                        _ => return Err(bad()),
-                    }),
-                    "units" => I::DgnSub(match value {
-                        "master" => false,
-                        "sub" => true,
-                        _ => return Err(bad()),
-                    }),
-                    "explode" => I::DgnExplode(on(value)?),
-                    "references" => I::DgnReferences(match value {
-                        "translate" => crate::modules::insert::dgn_import::ReferenceMode::Translate,
-                        "ignore" => crate::modules::insert::dgn_import::ReferenceMode::Ignore,
-                        "underlay" => crate::modules::insert::dgn_import::ReferenceMode::Underlay,
-                        _ => return Err(bad()),
-                    }),
-                    "existing" => I::DgnExisting(match value {
-                        "prompt" => crate::modules::insert::dgn_import::ExistingReference::Prompt,
-                        "overwrite" => crate::modules::insert::dgn_import::ExistingReference::Overwrite,
-                        "keep" => crate::modules::insert::dgn_import::ExistingReference::Keep,
-                        _ => return Err(bad()),
-                    }),
-                    "mapping" => I::DgnMappingTab(match value {
-                        "layer" => 0,
-                        "linetype" => 1,
-                        "lineweight" => 2,
-                        "color" => 3,
-                        _ => return Err(bad()),
-                    }),
-                    _ => return Err(bad()),
-                })
             }
             // The Image Adjust dialog, one field per call: "brightness=70",
             // "contrast=40", "fade=20" (the bar), "type=fade,abc" (typed into
@@ -3528,28 +3287,25 @@ impl OpenCADStudio {
                         .as_ref()
                     {
                         Some(form) => &form.rows,
-                        None => {
-                            return Err(failure("no_dialog", "The attribute form is not open"))
-                        }
+                        None => return Err(failure("no_dialog", "The attribute form is not open")),
                     },
                     _ => return Err(failure("no_dialog", "The attribute form is not open")),
                 };
                 // A tag names a row outright; only when none does is a tag
                 // allowed to stand for the caption a row shows.
-                let Some(index) = rows
-                    .iter()
-                    .position(|row| row.tag == tag)
-                    .or_else(|| {
-                        rows.iter().position(|row| {
-                            row.label == tag
-                                || crate::ui::window::insert_attr_dialog::caption(&row.label) == tag
-                        })
+                let Some(index) = rows.iter().position(|row| row.tag == tag).or_else(|| {
+                    rows.iter().position(|row| {
+                        row.label == tag
+                            || crate::ui::window::insert_attr_dialog::caption(&row.label) == tag
                     })
-                else {
+                }) else {
                     return Err(failure("unknown_tag", "tag is not a row of the open form"));
                 };
                 Message::InsertAttrDialog(
-                    crate::ui::window::insert_attr_dialog::InsertAttrMsg::Value(index, value.to_string()),
+                    crate::ui::window::insert_attr_dialog::InsertAttrMsg::Value(
+                        index,
+                        value.to_string(),
+                    ),
                 )
             }
             // The attribute form's Cancel is the plain decline of the parked

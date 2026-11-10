@@ -196,10 +196,7 @@ impl OpenCADStudio {
                             &self.tabs[i].scene.document,
                             entity,
                             &session.detail,
-                            crate::plugin::entity_labels::custom_entity_class_label(
-                                &self.disabled_plugins,
-                                entity,
-                            ),
+                            None,
                         );
                         if session.detail != "summary" {
                             json.as_object_mut().expect("entity JSON object").insert(
@@ -392,15 +389,7 @@ impl OpenCADStudio {
             .iter()
             .filter_map(|handle| {
                 scene.document.get_entity(*handle).map(|entity| {
-                    let full = entity_json(
-                        &scene.document,
-                        entity,
-                        "full",
-                        crate::plugin::entity_labels::custom_entity_class_label(
-                            &self.disabled_plugins,
-                            entity,
-                        ),
-                    );
+                    let full = entity_json(&scene.document, entity, "full", None);
                     json!({
                         "handle": full["handle"],
                         "type": full["type"],

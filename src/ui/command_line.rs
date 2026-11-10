@@ -122,7 +122,11 @@ fn option_shortcut(label: &str) -> (&str, &str, &str) {
     let len = label[start..]
         .find(|c: char| c.is_lowercase() || c.is_whitespace())
         .unwrap_or(label.len() - start);
-    (&label[..start], &label[start..start + len], &label[start + len..])
+    (
+        &label[..start],
+        &label[start..start + len],
+        &label[start + len..],
+    )
 }
 
 #[cfg(test)]
@@ -471,14 +475,23 @@ impl CommandLine {
     /// The latest command echo shows only `cmd`: a value typed on the same
     /// line as a variable belongs to its prompt, not to the command line.
     pub fn restate_last_command(&mut self, cmd: &str) {
-        if let Some(entry) = self.history.iter_mut().rev().find(|e| e.kind == EntryKind::Command) {
+        if let Some(entry) = self
+            .history
+            .iter_mut()
+            .rev()
+            .find(|e| e.kind == EntryKind::Command)
+        {
             entry.text = format!("{COMMAND_PREFIX}{} {cmd}", t!("Command:"));
         }
     }
     /// An answer given to the prompt just shown is written after it on the
     /// same line (`Enter new value for X <1>: 0`), as the reference echoes it.
     pub fn answer_last_prompt(&mut self, answer: &str) {
-        if let Some(entry) = self.history.last_mut().filter(|e| e.text.trim_end().ends_with(':')) {
+        if let Some(entry) = self
+            .history
+            .last_mut()
+            .filter(|e| e.text.trim_end().ends_with(':'))
+        {
             entry.text = format!("{} {answer}", entry.text.trim_end());
         }
     }
@@ -890,10 +903,14 @@ impl CommandLine {
             ))
             .anchor_bottom();
         let tool = |icon: Element<'a, Message>, label: String, msg: Message| {
-            button(row![icon, text(label).size(11)].spacing(4).align_y(iced::Center))
-                .on_press(msg)
-                .style(header_btn_style)
-                .padding([2, 6])
+            button(
+                row![icon, text(label).size(11)]
+                    .spacing(4)
+                    .align_y(iced::Center),
+            )
+            .on_press(msg)
+            .style(header_btn_style)
+            .padding([2, 6])
         };
         let header = container(
             row![
@@ -927,7 +944,6 @@ impl CommandLine {
         control_enabled: bool,
         control_busy: bool,
         pick_pending: bool,
-        graph_open: bool,
     ) -> Element<'a, Message> {
         // Only the most recent entries pushed within COMMANDLINEFADETIME
         // show on the overlay (0 means never fade). The dropdown button
@@ -1003,7 +1019,10 @@ impl CommandLine {
                         {
                             row![part(before), part(short).style(accent), part(after)]
                         } else {
-                            row![part(&opt.label), part(&format!(" ({keyword})")).style(accent)]
+                            row![
+                                part(&opt.label),
+                                part(&format!(" ({keyword})")).style(accent)
+                            ]
                         };
                         let btn = button(label)
                             .on_press(Message::CommandOptionPick(opt.keyword.clone()))
@@ -1040,18 +1059,21 @@ impl CommandLine {
                     col.push(container(entry_text(entry.text.clone())).padding([1, 8]))
                 }
             });
-        let prompt = container(text(crate::tr!("command-line", "label")).size(self.font_size).font(self.font).style(
-            |theme: &Theme| {
-                let p = theme.palette();
-                let color = accessible_accent_threshold(
-                    p.success.base.color,
-                    p.background.base.color,
-                    p.background.base.text,
-                    4.5,
-                );
-                iced::widget::text::Style { color: Some(color) }
-            },
-        ))
+        let prompt = container(
+            text(crate::tr!("command-line", "label"))
+                .size(self.font_size)
+                .font(self.font)
+                .style(|theme: &Theme| {
+                    let p = theme.palette();
+                    let color = accessible_accent_threshold(
+                        p.success.base.color,
+                        p.background.base.color,
+                        p.background.base.text,
+                        4.5,
+                    );
+                    iced::widget::text::Style { color: Some(color) }
+                }),
+        )
         .padding([5, 8]);
         // Literal-space toggle: while active, every line behaves as if it
         // started with `>` — Space stays in the line instead of submitting, so
@@ -1179,11 +1201,9 @@ impl CommandLine {
                         // falling back to the target command's icon for aliases.
                         let icon_bytes =
                             crate::modules::registry::command_icon(cmd).or_else(|| {
-                                self.command_aliases
-                                    .get(cmd.as_str())
-                                    .and_then(|target| {
-                                        crate::modules::registry::command_icon(target)
-                                    })
+                                self.command_aliases.get(cmd.as_str()).and_then(|target| {
+                                    crate::modules::registry::command_icon(target)
+                                })
                             });
                         let icon: Element<'_, Message> = match icon_bytes {
                             Some(bytes) => crate::ui::icons::semantic(bytes, 14.0),
@@ -1296,20 +1316,6 @@ impl CommandLine {
                 bottom: 0.0,
                 left: 0.0,
             });
-        let graph_btn = button(crate::ui::icons::themed(crate::ui::icons::NODE_GRAPH, 13.0))
-            .on_press(Message::Graph(crate::ui::node_graph::GraphMsg::Toggle))
-            .style(move |theme: &Theme, status| {
-                if graph_open {
-                    button::primary(theme, status)
-                } else {
-                    button::subtle(theme, status)
-                }
-            })
-            .padding([2, 6]);
-        let graph_tip = container(text(t!("Node graph")).size(11))
-            .padding([3, 6])
-            .style(container::bordered_box);
-        let graph_btn = tooltip(graph_btn, graph_tip, tooltip::Position::Top).gap(4);
         // Enter without a keyboard (touch screens): the same as the context
         // menu's Enter.
         let enter_btn = button(crate::ui::icons::themed(crate::ui::icons::CHECK, 13.0))
@@ -1320,14 +1326,7 @@ impl CommandLine {
             .padding([3, 6])
             .style(container::bordered_box);
         let enter_btn = tooltip(enter_btn, enter_tip, tooltip::Position::Top).gap(4);
-        let input_row = row![
-            prompt,
-            literal_btn,
-            input_with_history,
-            enter_btn,
-            graph_btn,
-            mcp_btn
-        ]
+        let input_row = row![prompt, literal_btn, input_with_history, enter_btn, mcp_btn]
             .spacing(4)
             .align_y(iced::Center);
 

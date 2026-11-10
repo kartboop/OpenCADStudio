@@ -37,9 +37,7 @@ use crate::ui::popup::context_menu::{
     build_context_menu, ContextMenu, GripMenuCmd, GripMenuContext, MenuAction, MenuContext,
     SubmenuId,
 };
-use crate::ui::popup::quad_menu::{
-    quad_panels_for_target, QuadMode, QuadMsg, QuadTarget, QuadUi,
-};
+use crate::ui::popup::quad_menu::{quad_panels_for_target, QuadMode, QuadMsg, QuadTarget, QuadUi};
 use document::Handle;
 use iced::{Point, Task};
 
@@ -102,8 +100,16 @@ impl OpenCADStudio {
                 .cloned()
                 .collect(),
             clipboard_nonempty: !self.clipboard.is_empty(),
-            undo_label: tab.history.undo_stack.last().map(|s| s.display_label().into_owned()),
-            redo_label: tab.history.redo_stack.last().map(|s| s.display_label().into_owned()),
+            undo_label: tab
+                .history
+                .undo_stack
+                .last()
+                .map(|s| s.display_label().into_owned()),
+            redo_label: tab
+                .history
+                .redo_stack
+                .last()
+                .map(|s| s.display_label().into_owned()),
             props_open: self.show_properties,
             saved_filters: self.saved_filter_names(self.active_tab),
         }
@@ -125,7 +131,10 @@ impl OpenCADStudio {
         }
         let context = self.context_menu_context();
         let mut menu = build_context_menu(&context, open);
-        if matches!(context, crate::ui::popup::context_menu::MenuContext::Idle { .. }) {
+        if matches!(
+            context,
+            crate::ui::popup::context_menu::MenuContext::Idle { .. }
+        ) {
             let mut rows = crate::ui::popup::context_menu::customize_rows(
                 menu.rows,
                 &self.context_menu_custom,
@@ -148,7 +157,12 @@ impl OpenCADStudio {
     ) -> Task<Message> {
         use crate::app::ContextMenuEditMsg as M;
         // A typed command is named as the ribbon names it.
-        let typed = self.context_menu_editing.clone().unwrap_or_default().trim().to_uppercase();
+        let typed = self
+            .context_menu_editing
+            .clone()
+            .unwrap_or_default()
+            .trim()
+            .to_uppercase();
         let resolved = self.resolve_alias(&typed).unwrap_or_else(|| typed.clone());
         let label = crate::modules::registry::ribbon_commands()
             .get(&resolved)
@@ -182,7 +196,11 @@ impl OpenCADStudio {
                 }
             }
             M::Move(index, up) => {
-                let other = if up { index.checked_sub(1) } else { Some(index + 1) };
+                let other = if up {
+                    index.checked_sub(1)
+                } else {
+                    Some(index + 1)
+                };
                 if let Some(other) = other.filter(|other| *other < custom.custom.len()) {
                     custom.custom.swap(index, other);
                 }
@@ -430,7 +448,10 @@ impl OpenCADStudio {
         let first = {
             let mut sel = self.tabs[i].scene.selection.borrow_mut();
             // Beside the cursor; before the pointer has moved, the corner.
-            let at = sel.input.last_move_pos.unwrap_or(iced::Point::new(40.0, 40.0));
+            let at = sel
+                .input
+                .last_move_pos
+                .unwrap_or(iced::Point::new(40.0, 40.0));
             sel.menu.open(at);
             drop(sel);
             self.current_context_menu()
@@ -438,7 +459,13 @@ impl OpenCADStudio {
                 .iter()
                 .position(|row| matches!(row.action, MenuAction::Option(_)))
         };
-        self.tabs[i].scene.selection.borrow_mut().menu.ui.highlighted = first;
+        self.tabs[i]
+            .scene
+            .selection
+            .borrow_mut()
+            .menu
+            .ui
+            .highlighted = first;
         Some(self.unfocus_widgets())
     }
 
@@ -669,14 +696,6 @@ impl OpenCADStudio {
 /// the quad closes again (docs/quad-menu.md §3.4).
 pub(in crate::app) const QUAD_DRIFT_PX: f32 = 8.0;
 
-/// Commands whose line starts with this are plugin quad actions; the pick
-/// router hands them to `OpenCADStudio::quad_plugin_action` (the pick path's
-/// own host dispatch) instead of the generic dispatcher — the scheme is the
-/// pick surface's own and impossible by typed/automation input. The literal
-/// lives in `crate::plugin` (the scheme's home); this alias keeps the
-/// router's name.
-pub(crate) const QUAD_PLUGIN_PREFIX: &str = crate::plugin::QUAD_PLUGIN_PREFIX;
-
 impl OpenCADStudio {
     /// True while the quad cursor menu is open on the active tab.
     pub(in crate::app) fn quad_open(&self) -> bool {
@@ -748,14 +767,7 @@ impl OpenCADStudio {
     /// menu.
     pub(crate) fn open_quad(&mut self, mode: QuadMode, anchor: Point) -> bool {
         let target = self.quad_target_for(mode);
-        // API v15: the visible plugins' registered panels join after the
-        // builtin catalog (registration order; the disabled and dead drop
-        // out, the grips' visibility law). The web build has no plugin
-        // surface.
-        #[cfg(target_arch = "wasm32")]
         let plugin_panels: Vec<crate::ui::popup::quad_menu::QuadPanel> = Vec::new();
-        #[cfg(not(target_arch = "wasm32"))]
-        let plugin_panels = crate::app::plugin_host::plugin_quad_panels(&self.disabled_plugins);
         let panels = quad_panels_for_target(
             &target,
             &self.quad_mru,
@@ -883,8 +895,7 @@ impl OpenCADStudio {
             }
             QuadOptionMsg::CommandLaunch(on) => self.quad_command_launch = on,
             QuadOptionMsg::HoverDelay(ms) => {
-                self.quad_hover_delay_ms =
-                    crate::app::settings::clamp_quad_hover_delay_ms(ms)
+                self.quad_hover_delay_ms = crate::app::settings::clamp_quad_hover_delay_ms(ms)
             }
         }
         // Turning the quad off must not leave an open quad behind.
@@ -901,11 +912,7 @@ impl OpenCADStudio {
     /// record the per-type MRU, while `quadplugin:` items go to the pick
     /// path's own host dispatch ([`Self::quad_plugin_action`]) — never the
     /// generic dispatcher, and never the MRU.
-    pub(crate) fn on_quad_pick(
-        &mut self,
-        panel_id: String,
-        item_index: usize,
-    ) -> Task<Message> {
+    pub(crate) fn on_quad_pick(&mut self, panel_id: String, item_index: usize) -> Task<Message> {
         let i = self.active_tab;
         let Some(item) = self
             .quad_panels
@@ -948,19 +955,9 @@ impl OpenCADStudio {
             .borrow_mut()
             .input
             .right_click_entered = false;
-        // MRU: plain commands remember against the target's type key; plugin
-        // quad actions ride their own host dispatch unrecorded (they are not
-        // entity commands yet).
-        let is_plugin_action = item.command.starts_with(QUAD_PLUGIN_PREFIX);
-        if !is_plugin_action {
-            self.quad_record_mru(&open_target, &item.command);
-        }
+        self.quad_record_mru(&open_target, &item.command);
         let focus = self.focus_cmd_input();
-        let task = if is_plugin_action {
-            self.quad_plugin_action(&item.command)
-        } else {
-            self.update(Message::Command(item.command))
-        };
+        let task = self.update(Message::Command(item.command));
         Task::batch(vec![focus, task])
     }
 
@@ -1405,7 +1402,8 @@ mod tests {
                 assert_eq!(camera.lens, paper.lens);
                 assert_eq!(camera.depth_half_range, paper.depth_half_range);
                 assert_eq!(camera.model_bounds, paper.model_bounds);
-                let Some(document::EntityType::Viewport(viewport)) = scene.document.get_entity(handle)
+                let Some(document::EntityType::Viewport(viewport)) =
+                    scene.document.get_entity(handle)
                 else {
                     panic!("missing viewport");
                 };
@@ -1448,7 +1446,8 @@ mod tests {
                 let camera = scene.camera.borrow();
                 assert_eq!(camera.target, paper.target, "{command}: paper panned");
                 assert_eq!(camera.distance, paper.distance, "{command}: paper zoomed");
-                let Some(document::EntityType::Viewport(viewport)) = scene.document.get_entity(handle)
+                let Some(document::EntityType::Viewport(viewport)) =
+                    scene.document.get_entity(handle)
                 else {
                     panic!("missing viewport");
                 };
@@ -2101,9 +2100,7 @@ mod transparent_tests {
             assert!(
                 (lines[2].start.x - 50.0).abs() < 1e-6 && (lines[2].start.y - 25.0).abs() < 1e-6
             );
-            assert!(
-                (lines[2].end.x - 0.0).abs() < 1e-6 && (lines[2].end.y - 25.0).abs() < 1e-6
-            );
+            assert!((lines[2].end.x - 0.0).abs() < 1e-6 && (lines[2].end.y - 25.0).abs() < 1e-6);
         });
     }
 }
@@ -2169,13 +2166,7 @@ mod quad_tests {
     }
 
     fn menu_open(app: &OpenCADStudio) -> bool {
-        app.tabs[0]
-            .scene
-            .selection
-            .borrow()
-            .menu
-            .open_at
-            .is_some()
+        app.tabs[0].scene.selection.borrow().menu.open_at.is_some()
     }
 
     fn active(app: &OpenCADStudio) -> Option<&'static str> {
@@ -2198,7 +2189,10 @@ mod quad_tests {
             );
             // Primary panel = the Recent panel, populated from the creation
             // groups without any MRU history.
-            assert_eq!(app.quad_panels.first().map(|p| p.id.as_str()), Some("quad.recent"));
+            assert_eq!(
+                app.quad_panels.first().map(|p| p.id.as_str()),
+                Some("quad.recent")
+            );
             assert!(!app.quad_panels[0].items.is_empty());
         });
     }
@@ -2359,9 +2353,9 @@ mod quad_tests {
             app.quad_hover_step(0, Point::new(5.0, 5.0), 320);
             assert!(quad_state(&app).is_none());
             // Suppression off: the dwell counts and opens.
-            let _ = app.update(Message::QuadOption(QuadOptionMsg::SuppressHoverWhenSelection(
-                false,
-            )));
+            let _ = app.update(Message::QuadOption(
+                QuadOptionMsg::SuppressHoverWhenSelection(false),
+            ));
             app.quad_hover_step(0, Point::new(5.0, 5.0), 0);
             app.quad_hover_step(0, Point::new(5.0, 5.0), 320);
             assert!(quad_state(&app).is_some());
@@ -2378,10 +2372,7 @@ mod quad_tests {
         with_stack(|| {
             let (mut app, _) = quadded_line_app();
             let _ = app.update(Message::QuadOption(QuadOptionMsg::Width(99)));
-            assert_eq!(
-                app.quad_width,
-                crate::app::settings::clamp_quad_width(99)
-            );
+            assert_eq!(app.quad_width, crate::app::settings::clamp_quad_width(99));
             let _ = app.update(Message::QuadOption(QuadOptionMsg::HoverDelay(9_999)));
             assert_eq!(app.quad_hover_delay_ms, 2_000);
             let _ = app.update(Message::QuadOption(QuadOptionMsg::Quad(false)));
@@ -2411,9 +2402,9 @@ mod quad_tests {
             // A lingering selection is replaced, and the hover quad must be
             // allowed despite it.
             app.tabs[0].scene.select_entities(&[other]);
-            let _ = app.update(Message::QuadOption(QuadOptionMsg::SuppressHoverWhenSelection(
-                false,
-            )));
+            let _ = app.update(Message::QuadOption(
+                QuadOptionMsg::SuppressHoverWhenSelection(false),
+            ));
             app.tabs[0].scene.hover_highlight = Some(handle);
             app.quad_hover_step(0, Point::new(100.0, 100.0), 0);
             app.quad_hover_step(0, Point::new(100.0, 100.0), 320);
@@ -2426,7 +2417,8 @@ mod quad_tests {
             }));
             assert_eq!(active(&app), Some(expected.as_str()));
             assert!(
-                app.tabs[0].scene.selected.contains(&handle) && app.tabs[0].scene.selected.len() == 1,
+                app.tabs[0].scene.selected.contains(&handle)
+                    && app.tabs[0].scene.selected.len() == 1,
                 "the pick aligned the selection to the hovered entity"
             );
             assert_eq!(app.quad_mru.recent_for("Line", 1), vec![expected]);
@@ -2505,7 +2497,10 @@ mod quad_tests {
                 "still open-and-act"
             );
             assert_eq!(active(&app), Some("BREAK"), "the MRU head leads");
-            assert_eq!(app.quad_mru.recent_for("Line", 1), vec!["BREAK".to_string()]);
+            assert_eq!(
+                app.quad_mru.recent_for("Line", 1),
+                vec!["BREAK".to_string()]
+            );
         });
     }
 
@@ -2545,10 +2540,7 @@ mod quad_tests {
             assert!(quad_state(&app).is_some());
             app.command_line.input = "3".into();
             let _ = app.update(Message::CommandAppendChar("5".into()));
-            assert!(
-                quad_state(&app).is_none(),
-                "pending text closes the quad"
-            );
+            assert!(quad_state(&app).is_none(), "pending text closes the quad");
             assert_eq!(app.command_line.input, "35", "the digit reached the line");
             assert_eq!(active(&app), None);
         });

@@ -1,6 +1,6 @@
 ---
 summary: Exports the current layout or model space straight to a PDF or SVG file, using the current plot settings.
-related: EXPORTPDF, EXPORTSVG, PLOT, PUBLISH, STLOUT, STEPOUT
+related: EXPORTPDF, EXPORTSVG, PLOT, PUBLISH
 web: In the web app the file is downloaded by the browser instead of saved to a folder you pick.
 ---
 

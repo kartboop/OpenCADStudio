@@ -58,7 +58,7 @@ Double-click a hatch, or use <img src="images/icons/modify_hatchedit.svg" width=
 
 You can add your own hatch patterns in the standard `.pat` format. Put the `.pat` files in either of these folders and restart the program:
 
-- the `patterns` folder inside your settings folder, for example `%APPDATA%\OpenCADStudio\patterns` on Windows (see [Installation](Installation#where-your-settings-live) for the other systems; create the folder if it does not exist);
+- the `patterns` folder inside your settings folder, for example `%APPDATA%\OpenCADStudio\patterns` on Windows (see [Installation](Installation#settings) for the other systems; create the folder if it does not exist);
 - the folder set under **Options › Files › Support files**.
 
 Every pattern in those files then appears in the pattern list next to the built-in ones. A file can hold any number of patterns. Each pattern starts with a header line and continues with one line per line family:

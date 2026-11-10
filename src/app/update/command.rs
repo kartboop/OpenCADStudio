@@ -3,14 +3,10 @@
 #![allow(unused_imports)]
 use super::util::*;
 use super::{format_size, VIEWCUBE_HIT_SIZE};
-use crate::app::helpers::{
-    parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind,
-};
+use crate::app::helpers::{parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind};
 use crate::app::TextEntryMode;
 use crate::app::{Message, OpenCADStudio, POLY_START_DELAY_MS};
 use crate::modules::ModuleEvent;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::plugin::v4_support;
 use crate::scene::model::object::{GripApply, PropValue};
 use crate::scene::pick::grip::{
     find_hit_grip, find_hit_grip_paper, find_hit_grip_rte, GripEdit, GripEditMode,
@@ -322,10 +318,6 @@ impl OpenCADStudio {
         self.sync_ribbon_layers();
         self.sync_ribbon_styles();
         self.sync_ribbon_from_selection();
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(tab_id) = tab_id {
-            v4_support::on_tab_closed(tab_id);
-        }
         // The tab list just shrank: refresh the remembered session list
         // (web session memory).
         #[cfg(target_arch = "wasm32")]
@@ -671,13 +663,6 @@ impl OpenCADStudio {
             self.refresh_selected_grips();
             self.refresh_properties();
             return Task::none();
-        }
-
-        // Enter settles a custom grip at its current point. In particular it
-        // must never reach the empty-submit repeat-last-command shortcut.
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.tabs[self.active_tab].active_plugin_grip.is_some() {
-            return self.settle_plugin_grip_from_enter();
         }
 
         // Numeric entry while a normal grip stretch is active.
@@ -1194,12 +1179,14 @@ impl OpenCADStudio {
                 .active_cmd
                 .as_ref()
                 .is_some_and(|command| !command.options().is_empty());
-            self.command_line.push_rejection(if has_options {
-                crate::t!("Point or option keyword required.")
-            } else {
-                crate::t!("Invalid point.")
-            }
-            .as_ref());
+            self.command_line.push_rejection(
+                if has_options {
+                    crate::t!("Point or option keyword required.")
+                } else {
+                    crate::t!("Invalid point.")
+                }
+                .as_ref(),
+            );
             return self.focus_cmd_input();
         }
         if let Some(cmd) = self.command_line.submit() {
@@ -1311,56 +1298,6 @@ impl OpenCADStudio {
         Some(task)
     }
 
-    /// Shared Enter commit for a hot custom grip. Typed Dynamic Input and the
-    /// native direct-distance form both become one ordinary drag Move before
-    /// Settle, so the plugin sees the same lifecycle as a pointer placement.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn settle_plugin_grip_from_enter(&mut self) -> Task<Message> {
-        let i = self.active_tab;
-        let Some(active) = self.tabs[i].active_plugin_grip.clone() else {
-            return Task::none();
-        };
-        let dyn_locked = self.dyn_input
-            && self.tabs[i]
-                .dyn_fields
-                .iter()
-                .any(|field| field.locked());
-        let target = if dyn_locked {
-            self.dyn_resolve_point()
-        } else {
-            // Mirror native grip Stretch's direct-distance entry, including
-            // its tracking-ray behavior. No custom-grip scalar/radius mode is
-            // introduced here: this is only a displacement from the origin.
-            let text = crate::app::expr_eval::eval_to_string(self.command_line.input.trim());
-            crate::app::expr_eval::eval_number(text.trim()).map(|dist| {
-                if let Some((base, dir)) = self.active_distance_ray(i) {
-                    base + dir * dist
-                } else {
-                    let direction = self.tabs[i].last_cursor_world - active.origin_world;
-                    let len = direction.length();
-                    if len <= 1e-12 {
-                        active.origin_world
-                    } else {
-                        active.origin_world + direction / len * dist
-                    }
-                }
-            })
-        };
-        self.command_line.input.clear();
-
-        let mut move_task = Task::none();
-        if let Some(mut point) = target {
-            // Typed input must not bypass the declaration's hard axis.
-            if let Some(axis) = active.axis.and_then(|axis| axis.try_normalize()) {
-                point = active.origin_world + axis * (point - active.origin_world).dot(axis);
-            }
-            move_task = self.move_plugin_grip_drag(i, point);
-        }
-        let settle_task = self.settle_plugin_grip_drag();
-        self.sync_dyn_fields();
-        Task::batch([move_task, settle_task])
-    }
-
     /// The active command's current step collects free-form prose from the
     /// command line. Single decision point for the routes that type into
     /// the buffer (CommandInput, Shift+Enter, the view's on_submit wiring).
@@ -1423,10 +1360,6 @@ impl OpenCADStudio {
         // fields use the same keyboard path. Route Enter through CommandSubmit,
         // whose grip branch resolves Distance / Angle and finalizes the edit.
         let i = self.active_tab;
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.tabs[i].active_plugin_grip.is_some() && self.tabs[i].active_cmd.is_none() {
-            return self.settle_plugin_grip_from_enter();
-        }
         let grip_dyn_locked = self.tabs[i].active_grip.is_some()
             && self.dyn_input
             && self.tabs[i].dyn_fields.iter().any(|field| field.locked());
@@ -1966,9 +1899,8 @@ impl OpenCADStudio {
                     return Task::none();
                 }
                 if layer.frozen {
-                    self.command_line.push_error(
-                        crate::t!("A frozen layer can't be made current.").as_ref(),
-                    );
+                    self.command_line
+                        .push_error(crate::t!("A frozen layer can't be made current.").as_ref());
                     return Task::none();
                 }
                 // Mirror the change into the document header (CLAYER) too,
@@ -2416,11 +2348,10 @@ impl OpenCADStudio {
         let new = typed.trim().to_string();
         match node {
             TreeNode::Group(old) if !new.is_empty() && new != old => {
-                let taken = self.tabs[i]
-                    .layers
-                    .groups
-                    .iter()
-                    .any(|(g, _)| g.eq_ignore_ascii_case(&new) && !g.eq_ignore_ascii_case(&old));
+                let taken =
+                    self.tabs[i].layers.groups.iter().any(|(g, _)| {
+                        g.eq_ignore_ascii_case(&new) && !g.eq_ignore_ascii_case(&old)
+                    });
                 if taken {
                     self.command_line
                         .push_error(&crate::tr!("layer-groups", "exists", name = new));
@@ -2491,10 +2422,12 @@ impl OpenCADStudio {
             (TreeNode::Group(name) | TreeNode::Filter(name), A::Rename) => {
                 let panel = &mut self.tabs[i].layers;
                 panel.tree_rename = Some((node.clone(), name.clone()));
-                return iced::widget::operation::focus(crate::ui::window::layers::tree_rename_input_id())
-                    .chain(iced::widget::operation::select_all(
-                        crate::ui::window::layers::tree_rename_input_id(),
-                    ));
+                return iced::widget::operation::focus(
+                    crate::ui::window::layers::tree_rename_input_id(),
+                )
+                .chain(iced::widget::operation::select_all(
+                    crate::ui::window::layers::tree_rename_input_id(),
+                ));
             }
             (TreeNode::Unused, A::Purge) => {
                 let unused = self.tabs[i].layers.node_layers(&TreeNode::Unused);
@@ -2570,7 +2503,9 @@ impl OpenCADStudio {
         scene
             .selected
             .iter()
-            .fold(0u64, |acc, h| acc ^ h.value().wrapping_mul(0x9E37_79B9_7F4A_7C15))
+            .fold(0u64, |acc, h| {
+                acc ^ h.value().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            })
             .hash(&mut hasher);
         for layer in scene.document.layers.iter() {
             format!("{layer:?}").hash(&mut hasher);
@@ -3832,7 +3767,8 @@ impl OpenCADStudio {
         value: String,
     ) -> Task<Message> {
         let value = if field == "transparency" {
-            let Some(transparency) = crate::scene::creation_style::parse_current_transparency(&value)
+            let Some(transparency) =
+                crate::scene::creation_style::parse_current_transparency(&value)
             else {
                 self.command_line.push_error(
                     "Transparency: expected ByLayer, ByBlock, or an integer from 0 to 90.",
@@ -3848,7 +3784,9 @@ impl OpenCADStudio {
         } else {
             value
         };
-        if field == "authoring_alignment_type" { return self.set_authoring_alignment_type(&value); }
+        if field == "authoring_alignment_type" {
+            return self.set_authoring_alignment_type(&value);
+        }
         if field.starts_with("bedit_") {
             return self.set_block_property(field, &value);
         }
@@ -4118,7 +4056,8 @@ impl OpenCADStudio {
                                 .document
                                 .get_entity_mut(handle)
                                 .and_then(crate::entities::dimension::as_dimension_mut);
-                            if let Some(document::entities::Dimension::LargeRadial(dimension)) = radial
+                            if let Some(document::entities::Dimension::LargeRadial(dimension)) =
+                                radial
                             {
                                 dimension.base.text_user_positioned = false;
                             }
@@ -4642,9 +4581,24 @@ impl OpenCADStudio {
                     if self.tabs[i].scene.is_layer_locked(handle) {
                         continue;
                     }
-                    let result = if let Some(test) = self.tabs[i].block_test.as_ref().filter(|test| test.insert == handle) {
-                        crate::scene::block_lookup::evaluate_test_choice(&self.tabs[i].scene.document, &test.baseline, handle, &value)
-                    } else { crate::scene::block_lookup::evaluate_reference_choice(&self.tabs[i].scene.document, handle, &value) };
+                    let result = if let Some(test) = self.tabs[i]
+                        .block_test
+                        .as_ref()
+                        .filter(|test| test.insert == handle)
+                    {
+                        crate::scene::block_lookup::evaluate_test_choice(
+                            &self.tabs[i].scene.document,
+                            &test.baseline,
+                            handle,
+                            &value,
+                        )
+                    } else {
+                        crate::scene::block_lookup::evaluate_reference_choice(
+                            &self.tabs[i].scene.document,
+                            handle,
+                            &value,
+                        )
+                    };
                     match result {
                         Ok(Some(staged)) => {
                             self.apply_action_document(i, staged);
@@ -4849,7 +4803,9 @@ impl OpenCADStudio {
                                 text.width_factor = style.width_factor;
                                 text.oblique_angle = style.oblique_angle;
                             }
-                            (document::EntityType::MText(text), Some(style)) if style.height > 0.0 => {
+                            (document::EntityType::MText(text), Some(style))
+                                if style.height > 0.0 =>
+                            {
                                 text.height = style.height;
                             }
                             _ => {}
@@ -4868,7 +4824,10 @@ impl OpenCADStudio {
                         let document = &mut self.tabs[i].scene.document;
                         let current = match document.get_entity(handle) {
                             Some(document::EntityType::Dimension(dimension))
-                                if !matches!(**dimension, document::entities::Dimension::Arc(_)) =>
+                                if !matches!(
+                                    **dimension,
+                                    document::entities::Dimension::Arc(_)
+                                ) =>
                             {
                                 crate::scene::annotative::object_is_annotative(
                                     document,
@@ -4943,7 +4902,9 @@ impl OpenCADStudio {
                         .objects
                         .iter()
                         .find_map(|(h, o)| match o {
-                            document::objects::ObjectType::Material(m) if m.name == value => Some(*h),
+                            document::objects::ObjectType::Material(m) if m.name == value => {
+                                Some(*h)
+                            }
                             _ => None,
                         });
                     match value.as_str() {
@@ -5265,8 +5226,12 @@ impl OpenCADStudio {
             }
             return Task::none();
         }
-        if field == "authoring_grip_count" { return self.commit_block_grip_count(); }
-        if field.starts_with("authoring_display_grip_") { return self.commit_native_grip_location(field); }
+        if field == "authoring_grip_count" {
+            return self.commit_block_grip_count();
+        }
+        if field.starts_with("authoring_display_grip_") {
+            return self.commit_native_grip_location(field);
+        }
         if field.starts_with("authoring_action_") {
             return self.commit_authoring_action_option(field);
         }
@@ -5367,7 +5332,8 @@ impl OpenCADStudio {
                     }
                 }
                 if field.starts_with("ole_") {
-                    if let Err(message) = crate::entities::ole2frame::validate_property(field, &val) {
+                    if let Err(message) = crate::entities::ole2frame::validate_property(field, &val)
+                    {
                         self.command_line.push_error(message);
                         return Task::none();
                     }
@@ -5737,8 +5703,10 @@ impl OpenCADStudio {
                                                     plane,
                                                 );
                                         if field == "ml_scale" {
-                                            if let (document::EntityType::MLine(mline), Some(style)) =
-                                                (entity, mline_style.as_ref())
+                                            if let (
+                                                document::EntityType::MLine(mline),
+                                                Some(style),
+                                            ) = (entity, mline_style.as_ref())
                                             {
                                                 crate::modules::draw::draw::mline::sync_mline_element_parameters(
                                                             mline, style,
@@ -5964,42 +5932,6 @@ impl OpenCADStudio {
         self.invalidate_property_targets(i, &handles);
         self.tabs[i].dirty = true;
         self.refresh_properties();
-        Task::none()
-    }
-
-    /// Commit one plugin class parameter's edit (API v14): the stamped
-    /// selection writes through the session's class-parameter path — one
-    /// undo step inside the record update, the declaring plugin re-stages
-    /// from the record's dirty notification; a refusal (unknown or
-    /// non-editable parameter, unparseable value, unresolved record)
-    /// reports and changes nothing. The section binds to one entity and
-    /// exists only on the native build (the wasm build has no plugin
-    /// registry the section could bind to), so the wasm route stays inert.
-    pub(super) fn on_prop_plugin_param_commit(&mut self, name: String) -> Task<Message> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let i = self.active_tab;
-            self.tabs[i].properties.active_field = None;
-            let key = crate::ui::properties::plugin_param_edit_key(&name);
-            let handles = self.property_target_handles(i);
-            if handles.len() != 1 {
-                return Task::none();
-            }
-            let Some(value) = self.tabs[i].properties.edit_buf.remove(&key) else {
-                return Task::none();
-            };
-            let result;
-            {
-                let mut host = crate::app::plugin_host::HostSession::new(self, i);
-                result = host.update_plugin_class_instance_parameter(handles[0], &name, &value);
-            }
-            if let Err(err) = result {
-                self.command_line.push_error(&err);
-            }
-            self.refresh_properties();
-        }
-        #[cfg(target_arch = "wasm32")]
-        let _ = name;
         Task::none()
     }
 
@@ -6601,7 +6533,9 @@ mod layer_name_target_tests {
         let mut line = document::entities::Line::new();
         line.common.color = Color::Index(2);
         line.common.layer = "ZULU".into();
-        let handle = app.tabs[i].scene.add_entity(document::EntityType::Line(line));
+        let handle = app.tabs[i]
+            .scene
+            .add_entity(document::EntityType::Line(line));
         app.tabs[i].scene.select_entity(handle, true);
         let epoch = app.tabs[i].scene.geometry_epoch;
         let _ = app.update(Message::RibbonLayerColorChanged {
@@ -6795,16 +6729,31 @@ mod layer_name_target_tests {
         let current = app.tabs[i].scene.document.header.current_layer_name.clone();
         let _ = app.update(Message::LayerToggleFreeze(current.clone()));
         assert!(
-            !app.tabs[i].scene.document.layers.get(&current).unwrap().is_frozen(),
+            !app.tabs[i]
+                .scene
+                .document
+                .layers
+                .get(&current)
+                .unwrap()
+                .is_frozen(),
             "the current layer stays thawed"
         );
 
         let _ = app.update(Message::LayerToggleFreeze("ZULU".to_string()));
-        assert!(app.tabs[i].scene.document.layers.get("ZULU").unwrap().is_frozen());
+        assert!(app.tabs[i]
+            .scene
+            .document
+            .layers
+            .get("ZULU")
+            .unwrap()
+            .is_frozen());
         let zulu = app.layer_panel_index(i, "ZULU").unwrap();
         app.tabs[i].layers.selected = Some(zulu);
         let _ = app.on_layer_set_current();
-        assert_eq!(app.tabs[i].scene.document.header.current_layer_name, current);
+        assert_eq!(
+            app.tabs[i].scene.document.header.current_layer_name,
+            current
+        );
 
         for name in ["Defpoints", "XREF|WALLS"] {
             let mut layer = document::tables::layer::Layer::new(name);
@@ -6815,7 +6764,10 @@ mod layer_name_target_tests {
             app.tabs[i].layers.selected = Some(idx);
             app.tabs[i].layers.selected_multi = vec![idx];
             let _ = app.on_layer_delete();
-            assert!(app.tabs[i].scene.document.layers.contains(name), "{name} kept");
+            assert!(
+                app.tabs[i].scene.document.layers.contains(name),
+                "{name} kept"
+            );
         }
     }
 
@@ -7876,11 +7828,10 @@ mod tablestyle_ribbon_tests {
         let mut extra = document::objects::TableStyle::standard();
         extra.name = "EXTRA".to_string();
         extra.handle = app.tabs[i].scene.document.allocate_handle();
-        app.tabs[i]
-            .scene
-            .document
-            .objects
-            .insert(extra.handle, document::objects::ObjectType::TableStyle(extra));
+        app.tabs[i].scene.document.objects.insert(
+            extra.handle,
+            document::objects::ObjectType::TableStyle(extra),
+        );
         app.tabs[i].dirty = false;
         let _ = app.on_ribbon_style_changed(StyleKey::TableStyle, "EXTRA".to_string());
         assert_eq!(
@@ -7902,11 +7853,10 @@ mod tablestyle_ribbon_tests {
         let mut extra = document::objects::TableStyle::standard();
         extra.name = "EXTRA".to_string();
         extra.handle = app.tabs[i].scene.document.allocate_handle();
-        app.tabs[i]
-            .scene
-            .document
-            .objects
-            .insert(extra.handle, document::objects::ObjectType::TableStyle(extra));
+        app.tabs[i].scene.document.objects.insert(
+            extra.handle,
+            document::objects::ObjectType::TableStyle(extra),
+        );
         let _ = app.on_ribbon_style_changed(StyleKey::TableStyle, "EXTRA".to_string());
         app.open_table_insert();
         assert_eq!(
@@ -8035,7 +7985,9 @@ mod tab_close_tests {
         let id = app.tabs[i].id;
         crate::modules::draw::draw::attdef::session().set_place(id, &Default::default());
         assert!(
-            crate::modules::draw::draw::attdef::session().last_in(id).is_some(),
+            crate::modules::draw::draw::attdef::session()
+                .last_in(id)
+                .is_some(),
             "the drawing remembered a place"
         );
 
@@ -8420,7 +8372,11 @@ pub(super) fn layer_rename_problem(
         );
     }
     // A case-only change finds the layer itself, which is fine.
-    if document.layers.get(new).is_some_and(|taken| taken.name != old) {
+    if document
+        .layers
+        .get(new)
+        .is_some_and(|taken| taken.name != old)
+    {
         return Some(crate::tf!("A layer named \"{new}\" already exists.").into_owned());
     }
     None

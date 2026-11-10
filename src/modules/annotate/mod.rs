@@ -122,7 +122,7 @@ impl CadModule for AnnotateModule {
                         // The face runs and shows the one chosen last.
                         RibbonItem::LargeDropdown {
                             id: "ANNOTATE_TEXT",
-                            label: ocs_plugin_api::ribbon::FOLLOW_CHOSEN,
+                            label: crate::modules::ribbon::FOLLOW_CHOSEN,
                             icon: mtext::ICON,
                             items: vec![
                                 (mtext::tool().id, "Multiline Text", mtext::tool().icon),

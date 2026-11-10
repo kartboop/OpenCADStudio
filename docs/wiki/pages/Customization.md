@@ -9,17 +9,16 @@
 
 | Tab | What you set there |
 |---|---|
-| **General** | Interface language; shortcuts to plugins, keyboard shortcuts, command aliases and plot settings; the default save format. |
-| **Files** | Where the program keeps its files: configuration, plot styles, plugins, autosave files, fonts, colour books, the support files folder and the default template for new drawings. |
+| **General** | Interface language, keyboard shortcuts, command aliases, plot settings, and the default save format. |
+| **Files** | Configuration, plot styles, autosave files, fonts, colour books, support files, and the default template for new drawings. |
 | **Open and Save** | File associations for DWG and DXF, backups and automatic save. |
 | **Display** | Colour theme, drawing area colours, cursor, grip colours. |
 | **Drafting** | Drafting rotation, polar tracking increment, snap marker size, and the Drafting Settings. |
-| **Modeling** | 3D display tools: the ViewCube and the UCS icon. |
 | **Selection** | Pickbox and aperture size, selection modes (Shift to add, the picker for overlapping objects), visual effects. |
 | **User Preferences** | Navigation style, mouse wheel and touchpad zoom, text and dimension behaviour, the 3D mouse. |
 | **Graphics** | The graphics backend and display quality. |
 
-Settings are stored in the settings folder; see [Installation](Installation#where-your-settings-live).
+Settings are stored in the settings folder; see [Installation](Installation#settings).
 
 ## Command aliases
 

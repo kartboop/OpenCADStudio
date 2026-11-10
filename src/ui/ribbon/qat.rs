@@ -1531,7 +1531,7 @@ mod tests {
         // The same command in other case is the same entry.
         ribbon.qat_look("line");
         assert_eq!(ribbon.qat_cache.borrow().looks.len(), 2);
-        ribbon.set_modules(crate::plugin::all_ribbon_modules());
+        ribbon.set_modules(crate::modules::registry::all_modules());
         assert!(ribbon.qat_cache.borrow().looks.is_empty());
     }
 

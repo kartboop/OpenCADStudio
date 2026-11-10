@@ -887,7 +887,10 @@ pub struct UserSettings {
     /// QUADWIDTH: columns the expanded quad lays out (2..=12, default 6).
     /// The reader is the tolerant one above: a hand-written out-of-range
     /// number loads clamped instead of failing the whole config parse.
-    #[serde(default = "default_quad_width", deserialize_with = "deserialize_quad_width")]
+    #[serde(
+        default = "default_quad_width",
+        deserialize_with = "deserialize_quad_width"
+    )]
     pub quad_width: u8,
     /// QUADCOMMANDLAUNCH: a right-click over an entity without entering the
     /// quad launches the entity's default command directly.
@@ -896,7 +899,10 @@ pub struct UserSettings {
     /// appears, in milliseconds (0..=2000; 0 = immediately). The reader is
     /// the tolerant one above: a negative or oversized hand-written number
     /// loads clamped instead of failing the whole config parse.
-    #[serde(default = "default_quad_hover_delay_ms", deserialize_with = "deserialize_quad_hover_delay_ms")]
+    #[serde(
+        default = "default_quad_hover_delay_ms",
+        deserialize_with = "deserialize_quad_hover_delay_ms"
+    )]
     pub quad_hover_delay_ms: u64,
     /// GRIPOBJLIMIT: past this many selected objects, no grips are drawn at
     /// all. 0 means no limit. The drawing header carries no slot for it.
@@ -978,8 +984,6 @@ pub struct UserSettings {
     /// PDFSHXTEXT's recognition settings (fonts, threshold, PDFSHXLAYER,
     /// PDFSHXBESTFONT, PDFSHXTEXTSETTINGS).
     pub pdf_shx_text: crate::modules::insert::pdf_shx_text::ShxTextSettings,
-    /// DGNIMPORTMODE and the DGN Import window's last choices.
-    pub dgn_import: crate::modules::insert::dgn_import::DgnImportSettings,
     /// Nested-copy symbol handling: false inserts, true binds.
     pub ncopy_bind: bool,
     /// Last Options page; unknown saved names fall back without rejecting the config.
@@ -1041,20 +1045,11 @@ pub struct UserSettings {
     /// Drawing new tabs start from (QNEW template); empty = a blank drawing.
     #[serde(default)]
     pub qnew_template: String,
-    /// App version whose donation prompt has been displayed.
-    pub donation_prompt_version: String,
     /// The graphics verdict (`GpuStatus::identity()`) whose warning popup the
     /// user chose not to see again. Empty = always show. Keyed by verdict so
     /// silencing "software rendering on llvmpipe" does not silence a later,
     /// different failure.
     pub gpu_warning_silenced: String,
-    /// Ids of plugins the user turned off in the Plugin Manager. Disabled
-    /// plugins keep their manifest listed but drop their ribbon tab and command
-    /// dispatch.
-    pub disabled_plugins: Vec<String>,
-    /// Linked plugin source repositories (`owner/repo`) the marketplace installs
-    /// from.
-    pub plugin_repos: Vec<String>,
     /// Command-line literal-space mode: when on, Space stays in the input
     /// instead of submitting (as if every line started with `>`), until the
     /// user toggles it back off.
@@ -1528,7 +1523,6 @@ impl Default for UserSettings {
             ucs_view: true,
             layout_create_viewport: true,
             pdf_shx_text: Default::default(),
-            dgn_import: Default::default(),
             ncopy_bind: false,
             cursor_type: CursorType::Crosshair,
             crosshair_color: None,
@@ -1543,10 +1537,7 @@ impl Default for UserSettings {
             check_missing_fonts: true,
             font_source_url: String::new(),
             qnew_template: String::new(),
-            donation_prompt_version: String::new(),
             gpu_warning_silenced: String::new(),
-            disabled_plugins: Vec::new(),
-            plugin_repos: Vec::new(),
             literal_spaces: false,
             command_history_height: crate::ui::command_line::HISTORY_HEIGHT_DEFAULT,
             // Snapper::default(): END|MID|CEN|NODE|QUAD|INT (63), master on.
@@ -1840,8 +1831,7 @@ mod tests {
 
         // Absent keys keep the in-code defaults (struct-level serde
         // default untouched).
-        let minimal: UserSettings =
-            serde_json::from_str(r#"{"pick_add": true}"#).unwrap();
+        let minimal: UserSettings = serde_json::from_str(r#"{"pick_add": true}"#).unwrap();
         assert_eq!(minimal.quad_width, 6);
         assert_eq!(minimal.quad_hover_delay_ms, 300);
     }

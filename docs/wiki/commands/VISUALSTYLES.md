@@ -23,4 +23,4 @@ You can also give the style on the same line, for example `VISUALSTYLES HIDDENLI
 ## Notes
 - This command only switches between the built-in styles. There is no manager for creating or editing your own visual styles.
 - The Visual Style drop-down on the ribbon and the style control in the viewport apply the same styles.
-- Same as [`VSCURRENT`](VSCURRENT-Command).
+- Same as `VSCURRENT`.

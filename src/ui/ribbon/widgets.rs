@@ -1137,7 +1137,7 @@ pub(super) fn render_large_dropdown<'a>(
         .unwrap_or(id);
     // FOLLOW_CHOSEN: the chosen item's icon and name.
     let explicit_label =
-        explicit_label.filter(|label| *label != ocs_plugin_api::ribbon::FOLLOW_CHOSEN);
+        explicit_label.filter(|label| *label != crate::modules::ribbon::FOLLOW_CHOSEN);
     // An empty label: the face keeps its own icon and names the chosen item.
     let names_item = explicit_label == Some("");
     let cur_icon = if names_item { icon } else { cur_icon };
@@ -1829,12 +1829,6 @@ pub fn module_event_to_message(event: ModuleEvent) -> Message {
             }
         }
         ModuleEvent::ToggleLayers => Message::ToggleLayers,
-        // Needs the tool context + async picker — route through the normal
-        // ribbon-click handler rather than a direct 1:1 message.
-        e @ ModuleEvent::PluginFileDialog { .. } => Message::RibbonToolClick {
-            tool_id: String::new(),
-            event: e,
-        },
     }
 }
 

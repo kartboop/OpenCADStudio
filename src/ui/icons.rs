@@ -70,7 +70,6 @@ pub static REFRESH: &[u8] = include_bytes!("../../assets/icons/ui/refresh.svg");
 pub static SWAP: &[u8] = include_bytes!("../../assets/icons/ui/swap.svg");
 pub static MINUS: &[u8] = include_bytes!("../../assets/icons/ui/minus.svg");
 pub static TRASH: &[u8] = include_bytes!("../../assets/icons/ui/trash.svg");
-pub static NODE_GRAPH: &[u8] = include_bytes!("../../assets/icons/ui/node_graph.svg");
 pub static COPY: &[u8] = include_bytes!("../../assets/icons/ui/copy.svg");
 pub static MENU: &[u8] = include_bytes!("../../assets/icons/ui/menu.svg");
 pub static MOVE: &[u8] = include_bytes!("../../assets/icons/ui/move.svg");
@@ -1589,10 +1588,6 @@ mod tests {
         icon_files(&icons_dir(), &mut files);
         assert!(files.len() > 800, "only {} icon files", files.len());
         for path in files {
-            // A brand logo, kept as its owner draws it.
-            if path.ends_with("reddit.svg") {
-                continue;
-            }
             let bytes = std::fs::read(&path).unwrap();
             let source = std::str::from_utf8(&bytes).unwrap();
             let name = path.display();

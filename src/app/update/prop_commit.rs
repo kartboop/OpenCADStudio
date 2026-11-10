@@ -19,7 +19,7 @@ impl OpenCADStudio {
             FieldKey::Geom(field) => self.on_prop_geom_commit(field),
             FieldKey::Attr(tag) => self.on_prop_attr_commit(tag),
             FieldKey::BlockParameter(key) => self.commit_block_parameter_property(key, None),
-            FieldKey::PluginParam(name) => self.on_prop_plugin_param_commit(name),
+            FieldKey::PluginParam(_) => Task::none(),
             FieldKey::Param(index, field) => self.on_prop_param_commit(index, field),
         }
     }

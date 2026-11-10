@@ -1,6 +1,6 @@
 ---
 summary: Rounds the corner between two objects with an arc of a set radius, or rounds every corner of a polyline.
-related: CHAMFER, FILLETEDGE, BLEND, EXTEND, TRIM
+related: CHAMFER, BLEND, EXTEND, TRIM
 ribbon: Draw tab › Modify panel
 ---
 
@@ -22,6 +22,5 @@ With a radius of 0 the two objects are trimmed or extended to a sharp corner.
 
 ## Notes
 - You can fillet lines, arcs, polyline segments, rays, construction lines, circles, ellipses and splines.
-- If a 3D solid edge is selected when you start `FILLET`, it runs [`FILLETEDGE`](FILLETEDGE-Command) instead.
 - The radius and trim mode are remembered for the next time.
 - Objects on locked layers cannot be changed.

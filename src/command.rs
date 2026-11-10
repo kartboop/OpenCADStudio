@@ -1830,7 +1830,11 @@ pub enum CmdResult {
         definition: Handle,
         action: Handle,
         expected: Box<document::objects::ObjectType>,
-        point_choices: Option<(crate::scene::block_actions::Kind, i32, Vec<(Handle, i32, String)>)>,
+        point_choices: Option<(
+            crate::scene::block_actions::Kind,
+            i32,
+            Vec<(Handle, i32, String)>,
+        )>,
         targets: Vec<Handle>,
         frame: Option<Vec<DVec3>>,
         rotate_only: Option<Vec<Handle>>,
@@ -1855,7 +1859,11 @@ pub enum CmdResult {
         kind: crate::scene::block_actions::Kind,
         parameter: Handle,
         xy_key_point: Option<crate::scene::block_actions::XyKeyPoint>,
-        point_choices: Option<(crate::scene::block_actions::Kind, i32, Vec<(Handle, i32, String)>)>,
+        point_choices: Option<(
+            crate::scene::block_actions::Kind,
+            i32,
+            Vec<(Handle, i32, String)>,
+        )>,
         targets: Vec<Handle>,
         location: DVec3,
         frame: Option<Vec<DVec3>>,
@@ -1975,7 +1983,10 @@ pub enum CmdResult {
     /// object, or none when the pick was left with Enter or Esc.
     TableTemplatePick(Option<Handle>),
     /// Turn a layer off (or back on) and keep the command for its next pick.
-    SetLayerOn { layer: String, on: bool },
+    SetLayerOn {
+        layer: String,
+        on: bool,
+    },
     /// Command is still waiting for the next point; show updated prompt.
     NeedPoint,
     /// Update the committed-segment wire (normal colour) and keep collecting points.
@@ -2025,15 +2036,6 @@ pub enum CmdResult {
         handles: Vec<Handle>,
         point: DVec3,
         layout: crate::modules::annotate::mleader_edit::MLeaderCollectLayout,
-    },
-    /// Commit a Model-tab 3D solid: the document entity (for selection /
-    /// persistence) plus its B-rep (cached for boolean ops + shaded
-    /// rendering). Ends the command.
-    CommitSolid {
-        entity: EntityType,
-        solid: Box<kernel::brep::Body>,
-        history: document::objects::SolidHistoryOperation,
-        erase_source: Option<Handle>,
     },
     /// Commit a document entity, end the command, and open the in-place text
     /// editor on it (used by MLEADER to type the annotation after placement).
@@ -2710,99 +2712,6 @@ pub enum CmdResult {
         /// Translation vector applied once to every selected point.
         delta: DVec3,
     },
-    /// Extrude one or more profiles with the requested construction mode.
-    ExtrudeEntities {
-        handles: Vec<Handle>,
-        extent: ExtrudeExtent,
-        mode: ExtrudeMode,
-        taper_angle: f64,
-        color: [f32; 4],
-    },
-    /// Thicken one or more persistent surface bodies without consuming them.
-    ThickenEntities {
-        handles: Vec<Handle>,
-        distance: f64,
-    },
-    /// Resolve a profile, bounded area, or solid face for PRESSPULL.
-    PresspullPick {
-        handle: Option<Handle>,
-        point: DVec3,
-        offset: bool,
-        multiple: bool,
-    },
-    /// Apply a signed distance to the resolved PRESSPULL selection.
-    PresspullApply {
-        targets: Vec<crate::scene::model::presspull_model::PresspullTarget>,
-        distance: f64,
-        color: [f32; 4],
-    },
-    /// Revolve the profile entities around the given axis.
-    RevolveEntities {
-        handles: Vec<Handle>,
-        axis_start: glam::DVec3,
-        axis_end: glam::DVec3,
-        /// The line picked as the axis (Object), which an associative
-        /// surface keeps reading.
-        axis_object: Option<Handle>,
-        angle: f64,
-        start_angle: f64,
-        mode: ExtrudeMode,
-        color: [f32; 4],
-    },
-    /// Sweep the selected profiles along one path in a single undo step.
-    SweepEntities {
-        handles: Vec<Handle>,
-        path_handle: Handle,
-        mode: ExtrudeMode,
-        options: SweepOptions,
-        color: [f32; 4],
-        /// Scale and twist expressions entered with the Expression option;
-        /// a swept surface stays linked to them.
-        expressions: [Option<String>; 2],
-    },
-    /// Loft through ordered cross-sections, with optional guides or a path.
-    LoftEntities {
-        sections: Vec<LoftSectionSelection>,
-        guides: Vec<Handle>,
-        path: Option<Handle>,
-        mode: ExtrudeMode,
-        options: LoftOptions,
-        color: [f32; 4],
-    },
-    /// Round or bevel one or more resolved B-rep edges on a solid.
-    SolidEdgeBlend {
-        handle: Handle,
-        edges: Vec<kernel::brep::EdgeKey>,
-        base_face: Option<kernel::brep::FaceKey>,
-        value: f64,
-        other_value: f64,
-        fillet: bool,
-    },
-    /// Offset a solid and optionally open selected faces.
-    SolidShell {
-        handle: Handle,
-        actions: Vec<ShellFaceAction>,
-        distance: f64,
-    },
-    SolidSubtract {
-        bases: Vec<Handle>,
-        cutters: Vec<Handle>,
-        convert_meshes: bool,
-    },
-    /// Split every selected solid or surface with one arbitrary plane.
-    /// `keep_point == None` retains both sides; otherwise it selects the side
-    /// containing that WCS point.
-    SliceEntities {
-        targets: Vec<Handle>,
-        plane: kernel::space::Plane,
-        keep_point: Option<DVec3>,
-    },
-    /// Split selected solids or surfaces with one selected analytic sheet.
-    SliceSurfaceEntities {
-        targets: Vec<Handle>,
-        cutter: Box<kernel::brep::Body>,
-        keep_point: Option<DVec3>,
-    },
     /// INSERT landed on a block that has AttributeDefinitions.
     /// The host should look up the attdefs for `block_name` from the document
     /// and call `attreq_set_attdefs()` on the command, then loop on text input.
@@ -2840,8 +2749,6 @@ pub enum CmdResult {
     SetTexteditMode(bool),
     /// Return a resolved point back to a suspended parent command (e.g. MTP / M2P).
     ReturnPoint(DVec3),
-    /// Import a DGN model (DGNIMPORT); ends the command.
-    DgnImport(crate::modules::insert::dgn_import::DgnImportRequest),
 }
 
 /// What kind of value the active command is currently asking for. Drives
@@ -3372,16 +3279,6 @@ pub trait CadCommand: Send {
     }
 
     fn on_editor_display_height(&mut self, _height: f64) {}
-
-    /// Return modal dialog definition if this command requires a GUI dialog.
-    fn modal_dialog(&self) -> Option<ocs_plugin_api::dialog::DialogDef> {
-        None
-    }
-
-    /// Called when a modal dialog is submitted or cancelled.
-    fn on_dialog_response(&mut self, _response: ocs_plugin_api::dialog::DialogResponse) -> CmdResult {
-        CmdResult::Cancel
-    }
 
     /// Called when the user clicks and `needs_entity_pick()` is true.
     /// `handle` is the nearest wire's entity handle (Handle::NULL if nothing found).
@@ -4022,11 +3919,6 @@ pub trait CadCommand: Send {
     fn dyn_label_point(&self, _cursor: DVec3) -> Option<DVec3> {
         None
     }
-
-    /// Pending panel updates buffered during interactive command execution.
-    fn take_pending_panel_updates(&mut self) -> Vec<(String, std::collections::HashMap<String, ocs_plugin_api::dialog::DialogValue>)> {
-        Vec::new()
-    }
 }
 
 // ── Autocomplete registry ─────────────────────────────────────────────────
@@ -4049,8 +3941,7 @@ inventory::collect!(CommandRegistration);
 
 /// One-line summary of a command or system variable from its wiki page.
 pub fn command_summary(name: &str) -> Option<&'static str> {
-    static SUMMARIES: &[(&str, &str)] =
-        include!(concat!(env!("OUT_DIR"), "/command_summaries.rs"));
+    static SUMMARIES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/command_summaries.rs"));
     let name = name.trim_start_matches(['\'', '_']).to_ascii_uppercase();
     SUMMARIES
         .binary_search_by(|(key, _)| (*key).cmp(name.as_str()))
@@ -4088,7 +3979,10 @@ mod constraint_registry_tests {
             .filter_map(|(_, target)| target.trim().strip_prefix('*'))
             .filter(|target| !names.iter().any(|name| name.eq_ignore_ascii_case(target)))
             .collect();
-        assert!(unknown.is_empty(), "alias targets missing from the registry: {unknown:?}");
+        assert!(
+            unknown.is_empty(),
+            "alias targets missing from the registry: {unknown:?}"
+        );
     }
 
     /// Ensures every constraint command remains discoverable by autocomplete

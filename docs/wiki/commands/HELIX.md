@@ -1,6 +1,6 @@
 ---
 summary: Creates a 3D helix, or a flat spiral when the height is zero.
-related: SPLINE, SWEEP
+related: SPLINE
 ribbon: Draw tab › Draw panel
 ---
 

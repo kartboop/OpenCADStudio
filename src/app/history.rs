@@ -235,7 +235,6 @@ impl OpenCADStudio {
             structure: (!objects.is_empty()).then_some(StructureSnapshot::Objects(objects)),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: label.into(),
         };
@@ -366,14 +365,23 @@ impl OpenCADStudio {
             .chain(sets_after)
             .map(|set| set.scope)
         {
-            if parametric_constraints.iter().any(|entry| entry.scope == scope) {
+            if parametric_constraints
+                .iter()
+                .any(|entry| entry.scope == scope)
+            {
                 continue;
             }
-            let find = |sets: &[crate::scene::parametric_constraints::ParametricConstraintSet]| {
-                sets.iter().find(|set| set.scope == scope).cloned().unwrap_or_else(|| {
-                    crate::scene::parametric_constraints::ParametricConstraintSet::new(scope)
-                })
-            };
+            let find =
+                |sets: &[crate::scene::parametric_constraints::ParametricConstraintSet]| {
+                    sets.iter()
+                        .find(|set| set.scope == scope)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            crate::scene::parametric_constraints::ParametricConstraintSet::new(
+                                scope,
+                            )
+                        })
+                };
             let before = find(&pending.parametric_constraints_before);
             let after = find(sets_after);
             // A set can change without its constraint list changing: dropping
@@ -387,12 +395,7 @@ impl OpenCADStudio {
                 });
             }
         }
-        let graph = pending
-            .graph_before
-            .take()
-            .map(|before| Box::new((before, self.tabs[i].graph.undo_state())));
         if !pending.keep_empty
-            && graph.is_none()
             && visibility_states.is_none()
             && entities.is_empty()
             && reference_designations.is_empty()
@@ -421,7 +424,6 @@ impl OpenCADStudio {
                 .then_some(StructureSnapshot::Full(pending.structure_before)),
             parametric_constraints,
             reference_designations,
-            graph,
             named_parameters: None,
             label: pending.label,
         };
@@ -440,9 +442,6 @@ impl OpenCADStudio {
     pub(super) fn finish_all_pending_history(&mut self) {
         // A graph evaluation drives nested updates (an object node writes
         // through the Properties path); its step closes after it, as one.
-        if self.graph_undo_open {
-            return;
-        }
         for i in 0..self.tabs.len() {
             // A plugin's scope spans the commands its running request drives;
             // the message boundary after the request closes it.
@@ -455,27 +454,13 @@ impl OpenCADStudio {
                 .pending
                 .as_ref()
                 .is_some_and(|pending| pending.held);
-            if !self.joins_plugin_scope(i) && !grouping && !held {
+            if !grouping && !held {
                 self.finish_pending_history(i);
             }
         }
     }
 
-    /// A plugin request is running and tab `i` has the plugin's open
-    /// `push_undo` scope: edits join it instead of closing it.
-    fn joins_plugin_scope(&self, i: usize) -> bool {
-        self.plugin_request_active
-            && self.tabs[i]
-                .history
-                .pending
-                .as_ref()
-                .is_some_and(|pending| pending.plugin_owned)
-    }
-
     pub(super) fn push_undo_snapshot(&mut self, i: usize, label: impl Into<HistoryLabel>) {
-        if self.graph_undo_open {
-            return;
-        }
         self.finish_pending_history(i);
         let label = label.into();
         let current_layout = self.tabs[i].scene.current_layout.clone();
@@ -497,7 +482,6 @@ impl OpenCADStudio {
             plugin_owned: false,
             keep_empty: false,
             held: false,
-            graph_before: None,
         });
     }
 
@@ -544,27 +528,6 @@ impl OpenCADStudio {
         _touched: usize,
         delta_safe: bool,
     ) -> Option<PendingDelta> {
-        // While a plugin request drives a command inside the plugin's open
-        // `push_undo` scope, JOIN that scope instead of closing it: a re-bond
-        // composed of writes + constraints + replays is ONE plugin-labeled
-        // step. The returned delta never commits: no scene recording was
-        // begun, so `commit_undo_delta` no-ops.
-        // A node graph step is one undo step: what its operations run joins it.
-        if self.graph_undo_open {
-            return None;
-        }
-        if self.joins_plugin_scope(i) {
-            let label = label.into();
-            let structure_before = (!delta_safe || self.tabs[i].active_block_edit.is_some())
-                .then(|| self.tabs[i].scene.document.snapshot_structure());
-            return Some(PendingDelta {
-                label,
-                current_layout: self.tabs[i].scene.current_layout.clone(),
-                selected_before: self.tabs[i].scene.selected.iter().copied().collect(),
-                dirty_before: self.tabs[i].dirty,
-                structure_before,
-            });
-        }
         self.finish_pending_history(i);
         let label = label.into();
         let structure_before = (!delta_safe || self.tabs[i].active_block_edit.is_some())
@@ -704,7 +667,6 @@ impl OpenCADStudio {
             structure: Some(StructureSnapshot::Layers(entries)),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: pending.label,
         };
@@ -766,7 +728,6 @@ impl OpenCADStudio {
             structure: Some(StructureSnapshot::TextStyles(entries)),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: pending.label,
         };
@@ -828,7 +789,6 @@ impl OpenCADStudio {
             structure: Some(StructureSnapshot::DimStyles(entries)),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: pending.label,
         };
@@ -910,7 +870,6 @@ impl OpenCADStudio {
             structure: Some(StructureSnapshot::Objects(entries)),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: pending.label,
         };
@@ -951,7 +910,6 @@ impl OpenCADStudio {
             }),
             parametric_constraints: Vec::new(),
             reference_designations: Vec::new(),
-            graph: None,
             named_parameters: None,
             label: "STYLE".into(),
         };
@@ -981,15 +939,13 @@ impl OpenCADStudio {
         if matches!(
             entity,
             EntityType::Block(_) | EntityType::BlockEnd(_) | EntityType::Table(_)
-        )
-            || matches!(
-                entity,
-                EntityType::Extended(extended) if matches!(
-                    extended.data,
-                    document::entities::ExtendedEntityData::SectionObject(_)
-                )
+        ) || matches!(
+            entity,
+            EntityType::Extended(extended) if matches!(
+                extended.data,
+                document::entities::ExtendedEntityData::SectionObject(_)
             )
-        {
+        ) {
             return false;
         }
         let layer = entity.common().layer.clone();
@@ -1162,7 +1118,6 @@ impl OpenCADStudio {
             structure,
             parametric_constraints,
             reference_designations,
-            graph: None,
             named_parameters,
             label: pending.label,
         };
@@ -1263,7 +1218,10 @@ impl OpenCADStudio {
                     // re-inserts it — so both sides must be inspected.
                     layout_touched |=
                         matches!(entry.before, Some(document::objects::ObjectType::Layout(_)))
-                            || matches!(entry.after, Some(document::objects::ObjectType::Layout(_)));
+                            || matches!(
+                                entry.after,
+                                Some(document::objects::ObjectType::Layout(_))
+                            );
                     scale_touched |=
                         matches!(entry.before, Some(document::objects::ObjectType::Scale(_)))
                             || matches!(entry.after, Some(document::objects::ObjectType::Scale(_)));
@@ -1320,11 +1278,6 @@ impl OpenCADStudio {
         d: &mut DeltaSnapshot,
         undo: bool,
     ) -> Vec<(Handle, crate::scene::ChangeKind)> {
-        if let Some(graph) = &d.graph {
-            self.tabs[i]
-                .graph
-                .restore(if undo { &graph.0 } else { &graph.1 });
-        }
         // Install the chosen side of every entity image. Derived-cache, geometry
         // and UI invalidation are deferred until every requested undo/redo step
         // has been applied.
@@ -1551,10 +1504,7 @@ impl OpenCADStudio {
                     // delta rides to the redo stack (it still holds the after
                     // side) — no current-state capture needed.
                     layer_panel_changed |= d.structure.as_ref().is_some_and(|structure| {
-                        matches!(
-                            structure,
-                            StructureSnapshot::Layers(_)
-                        ) || structure.is_full()
+                        matches!(structure, StructureSnapshot::Layers(_)) || structure.is_full()
                     }) || d.active_layer.is_some()
                         || d.entities.iter().any(|(_, before, after)| {
                             before
@@ -1566,7 +1516,10 @@ impl OpenCADStudio {
                         });
                     had_full |= d.structure.as_ref().is_some_and(StructureSnapshot::is_full);
                     changes.extend(self.apply_delta_state(i, &mut d, true));
-                    step_view = d.view.clone().map(|view| (view, d.current_layout_after.clone()));
+                    step_view = d
+                        .view
+                        .clone()
+                        .map(|view| (view, d.current_layout_after.clone()));
                     self.tabs[i]
                         .history
                         .redo_stack
@@ -1653,10 +1606,7 @@ impl OpenCADStudio {
                     native_graph_changed |=
                         !d.parametric_constraints.is_empty() || d.named_parameters.is_some();
                     layer_panel_changed |= d.structure.as_ref().is_some_and(|structure| {
-                        matches!(
-                            structure,
-                            StructureSnapshot::Layers(_)
-                        ) || structure.is_full()
+                        matches!(structure, StructureSnapshot::Layers(_)) || structure.is_full()
                     }) || d.active_layer.is_some()
                         || d.entities.iter().any(|(_, before, after)| {
                             before
@@ -1668,7 +1618,10 @@ impl OpenCADStudio {
                         });
                     had_full |= d.structure.as_ref().is_some_and(StructureSnapshot::is_full);
                     changes.extend(self.apply_delta_state(i, &mut d, false));
-                    step_view = d.view.clone().map(|view| (view, d.current_layout_after.clone()));
+                    step_view = d
+                        .view
+                        .clone()
+                        .map(|view| (view, d.current_layout_after.clone()));
                     self.tabs[i]
                         .history
                         .undo_stack

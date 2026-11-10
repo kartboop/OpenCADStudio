@@ -3,9 +3,7 @@
 #![allow(unused_imports)]
 use super::util::*;
 use super::{format_size, VIEWCUBE_HIT_SIZE};
-use crate::app::helpers::{
-    parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind,
-};
+use crate::app::helpers::{parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind};
 use crate::app::{Message, OpenCADStudio, POLY_START_DELAY_MS};
 use crate::modules::ModuleEvent;
 use crate::scene::model::object::GripApply;
@@ -174,27 +172,6 @@ impl OpenCADStudio {
             ModuleEvent::ToggleLayers => {
                 return Task::done(Message::ToggleLayers);
             }
-            ModuleEvent::PluginFileDialog {
-                command,
-                title,
-                filter_name,
-                extensions,
-            } => {
-                return Task::perform(
-                    async move {
-                        let exts: Vec<&str> = extensions.iter().map(|s| s.as_str()).collect();
-                        let path = crate::sys::file_dialog()
-                            .set_title(title)
-                            .add_filter(filter_name, &exts)
-                            .add_filter(crate::t!("All Files").as_ref(), &["*"])
-                            .pick_file()
-                            .await
-                            .map(|h| crate::sys::handle_path(&h));
-                        (command, path)
-                    },
-                    |(command, path)| Message::PluginFileDialogResult { command, path },
-                );
-            }
         }
         // Every non-Command event above is a one-shot (state toggle,
         // clear, dialog spawn) — nothing stays running to clear the
@@ -242,7 +219,8 @@ impl OpenCADStudio {
                 }
                 if self.tabs.len() == 1 {
                     self.tab_counter += 1;
-                    self.tabs[0] = crate::app::tab_document::DocumentTab::new_drawing(self.tab_counter);
+                    self.tabs[0] =
+                        crate::app::tab_document::DocumentTab::new_drawing(self.tab_counter);
                     self.active_tab = 0;
                     self.apply_display_defaults(0);
                 } else {
@@ -261,8 +239,6 @@ impl OpenCADStudio {
                 // last selection. #21.
                 self.sync_ribbon_layers();
                 self.sync_ribbon_from_selection();
-                #[cfg(not(target_arch = "wasm32"))]
-                crate::plugin::v4_support::on_tab_closed(tab_id);
                 // The tab list just shrank: refresh the remembered
                 // session list (web session memory).
                 #[cfg(target_arch = "wasm32")]
@@ -615,7 +591,10 @@ impl OpenCADStudio {
                 .define_block_raw(&def.name, def.base_point, def.entities.clone());
         }
         if redefine {
-            if let Err(err) = self.tabs[i].scene.redefine_block_raw(&name, base_point, entities) {
+            if let Err(err) = self.tabs[i]
+                .scene
+                .redefine_block_raw(&name, base_point, entities)
+            {
                 self.command_line.push_error(&err);
                 return Err(err);
             }
@@ -624,7 +603,11 @@ impl OpenCADStudio {
             // geometry there and put the insertion base on the block.
             let scene = &mut self.tabs[i].scene;
             scene.define_block_from_owned_entities(entities, &name, glam::DVec3::ZERO)?;
-            let block = scene.document.block_records.get(&name).map(|r| r.block_entity_handle);
+            let block = scene
+                .document
+                .block_records
+                .get(&name)
+                .map(|r| r.block_entity_handle);
             if let Some(document::EntityType::Block(block)) =
                 block.and_then(|h| scene.document.get_entity_mut(h))
             {
@@ -1148,8 +1131,7 @@ impl OpenCADStudio {
             self.tabs[i].xref_unloaded.remove(key);
             self.tabs[i].xref_stat_cache.remove(key);
         }
-        let infos =
-            crate::io::xref::resolve_xrefs(&mut self.tabs[i].scene.document, &base_dir);
+        let infos = crate::io::xref::resolve_xrefs(&mut self.tabs[i].scene.document, &base_dir);
         let fresh = crate::io::xref::collect_entries_with_prev(
             &self.tabs[i].scene.document,
             &base_dir,
@@ -1237,7 +1219,9 @@ mod tests {
             .objects
             .values()
             .find_map(|o| match o {
-                document::objects::ObjectType::Layout(l) if l.name == "Model" => Some(l.block_record),
+                document::objects::ObjectType::Layout(l) if l.name == "Model" => {
+                    Some(l.block_record)
+                }
                 _ => None,
             })
             .unwrap();
@@ -1949,8 +1933,12 @@ mod tests {
             .document
             .objects
             .insert(h, ObjectType::ImageDefinition(def));
-        let mut img =
-            document::entities::RasterImage::new("img.png", document::types::Vector3::ZERO, 8.0, 8.0);
+        let mut img = document::entities::RasterImage::new(
+            "img.png",
+            document::types::Vector3::ZERO,
+            8.0,
+            8.0,
+        );
         img.definition_handle = Some(h);
         app.tabs[i]
             .scene

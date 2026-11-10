@@ -1,19 +1,18 @@
 ---
-summary: Controls whether the source objects are deleted when you create solids or surfaces from them.
+summary: Controls whether an original spline is deleted after SPLINEDIT converts it.
 type: Integer
 saved: Program settings
 default: 1
-related: EXTRUDE, REVOLVE, SWEEP, LOFT, SPLINEDIT, SURFACEASSOCIATIVITY
+related: SPLINEDIT
 ---
 
 ## Values
+
 | Value | Meaning |
-|---|---|
-| 0 | Keep all source objects. |
-| 1 | Delete the profiles and cross sections. Keep sweep paths and loft guides. |
-| 2 | Delete the profiles and cross sections, and also the sweep paths and loft guides. |
-| 3 | Delete the profiles and cross sections. Delete paths and guides only when the result is a solid, not a surface. |
+| --- | --- |
+| 0 | Keep the original spline. |
+| Any other value | Delete the original after a successful conversion. |
 
 ## Notes
-- Used by [`EXTRUDE`](EXTRUDE-Command), [`REVOLVE`](REVOLVE-Command), [`SWEEP`](SWEEP-Command), [`LOFT`](LOFT-Command) and conversion to surfaces. When converting a spline with [`SPLINEDIT`](SPLINEDIT-Command), any value other than 0 deletes the original.
-- An associative surface (see [`SURFACEASSOCIATIVITY`](SURFACEASSOCIATIVITY-System-Variable)) keeps the path it depends on.
+
+The setting is applied only after a successful edit. A failed or cancelled conversion leaves the original object unchanged.

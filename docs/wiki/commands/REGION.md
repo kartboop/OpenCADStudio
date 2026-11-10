@@ -1,6 +1,6 @@
 ---
 summary: Turns closed planar shapes, or connected planar edges that form closed loops, into region objects.
-related: BOUNDARY, UNION, SUBTRACT, EXTRUDE, PRESSPULL
+related: BOUNDARY
 ribbon: Draw tab › Draw panel
 ---
 

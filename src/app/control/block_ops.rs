@@ -1096,7 +1096,7 @@ impl OpenCADStudio {
                         format!("/{path}")
                     };
                     let actual = record_val.pointer(&pointer);
-                    match crate::app::record_api::compare(
+                    match crate::app::record_compare::compare(
                         actual,
                         filter["op"].as_str().unwrap_or("eq"),
                         filter.get("value"),

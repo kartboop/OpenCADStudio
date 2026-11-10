@@ -1,24 +1,6 @@
-//! Headless automation server (`OpenCADStudio --serve`).
-//!
-//! Drives the app without a GUI over a line-based JSON protocol: one request
-//! object per line on stdin, one response object per line on stdout. State (the
-//! active document) persists across requests, so an external process — a script
-//! or an AI agent — can act, observe, and act again.
-//!
-//! Operations:
-//! - `{"op":"new"}`                          — start an empty document
-//! - `{"op":"open","path":"file.dwg"}`       — load a drawing
-//! - `{"op":"run","cmd":"LAYER Walls"}`      — run a command (the same dispatcher
-//!                                             the GUI command line uses)
-//! - `{"op":"entities"}`                     — summary count by entity type
-//! - `{"op":"save","path":"out.dwg"}`        — write the document (path optional
-//!                                             once opened/saved)
+//! Internal document operations shared by the GUI and its tests.
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::io::line_read::{lines_capped, MAX_LINE_BYTES};
 use std::collections::{BTreeMap, HashSet};
-#[cfg(not(target_arch = "wasm32"))]
-use std::io::Write;
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
@@ -26,23 +8,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::OpenCADStudio;
-
-/// Run the headless JSON server. Default transport is stdin/stdout; with
-/// `--port <N>` it instead listens on `127.0.0.1:<N>` and serves one client at
-/// a time (the document session persists across reconnects); every socket
-/// request carries `"token"` (see `rest::api_token`).
-#[cfg(not(target_arch = "wasm32"))]
-pub fn serve(read_only: bool) {
-    let mut app = OpenCADStudio::new_headless(read_only);
-    match port_arg() {
-        Some(port) => serve_socket(
-            &mut app,
-            port,
-            &std::sync::Arc::new(std::sync::atomic::AtomicU16::new(0)),
-        ),
-        None => serve_stdio(&mut app),
-    }
-}
 
 /// Headless one-shot format conversion (`--export IN OUT`). Loads `input`,
 /// writes `output` (format chosen from `output`'s extension), and returns a
@@ -112,127 +77,11 @@ pub fn run_batch(script: &std::path::Path, files: &[PathBuf], read_only: bool) -
     }
 }
 
-/// `--port <N>` if present on the command line.
-#[cfg(not(target_arch = "wasm32"))]
-fn port_arg() -> Option<u16> {
-    let mut args = std::env::args();
-    while let Some(a) = args.next() {
-        if a == "--port" {
-            return args.next().and_then(|s| s.parse().ok());
-        }
-    }
-    None
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn ready() -> Value {
-    json!({
-        "ok": true,
-        "ready": true,
-        "version": env!("OCS_APP_VERSION"),
-        "session_id": super::control::session_id(),
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn serve_stdio(app: &mut OpenCADStudio) {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    {
-        let mut o = stdout.lock();
-        let _ = writeln!(o, "{}", ready());
-        let _ = o.flush();
-    }
-    for line in lines_capped(stdin.lock(), MAX_LINE_BYTES) {
-        let Ok(line) = line else { break };
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let resp = app.automation_op(line);
-        let mut o = stdout.lock();
-        let _ = writeln!(o, "{resp}");
-        let _ = o.flush();
-    }
-}
-
-/// Idle timeout for one `--serve` socket client — the same 15 s every other
-/// transport in the codebase uses (`rest.rs`, `http_bridge.rs`,
-/// `control::transport`), and the only one this path was missing.
-#[cfg(not(target_arch = "wasm32"))]
-const SERVE_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-
-/// Serve one socket client at a time on `127.0.0.1:port`. An idle client is
-/// disconnected after [`SERVE_IDLE_TIMEOUT`] — the accept loop is
-/// single-threaded, so a read that never completes would wedge the port for
-/// every later client. The document session survives reconnects.
-#[cfg(not(target_arch = "wasm32"))]
-fn serve_socket(
-    app: &mut OpenCADStudio,
-    port: u16,
-    bound_port: &std::sync::Arc<std::sync::atomic::AtomicU16>,
-) {
-    serve_socket_with_idle(app, port, bound_port, SERVE_IDLE_TIMEOUT)
-}
-
-/// [`serve_socket`] with an explicit per-client idle timeout (a test seam;
-/// production traffic uses [`SERVE_IDLE_TIMEOUT`]).
-#[cfg(not(target_arch = "wasm32"))]
-fn serve_socket_with_idle(
-    app: &mut OpenCADStudio,
-    port: u16,
-    bound_port: &std::sync::Arc<std::sync::atomic::AtomicU16>,
-    idle: std::time::Duration,
-) {
-    let listener = match std::net::TcpListener::bind(("127.0.0.1", port)) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("--serve: cannot bind 127.0.0.1:{port}: {e}");
-            return;
-        }
-    };
-    let bound = listener.local_addr().map(|a| a.port()).unwrap_or(port);
-    bound_port.store(bound, std::sync::atomic::Ordering::SeqCst);
-    eprintln!("OpenCADStudio --serve listening on 127.0.0.1:{bound}");
-    crate::rest::announce_token();
-    for stream in listener.incoming().flatten() {
-        let _ = stream.set_read_timeout(Some(idle));
-        let Ok(read_half) = stream.try_clone() else {
-            continue;
-        };
-        let reader = std::io::BufReader::new(read_half);
-        let mut writer = stream;
-        let _ = writeln!(writer, "{}", ready());
-        let _ = writer.flush();
-        for line in lines_capped(reader, MAX_LINE_BYTES) {
-            let Ok(line) = line else { break };
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            // Loopback is shared by every process and user on the machine:
-            // each request carries the session token, like the GUI's own
-            // channel, and a connection that fails it is dropped.
-            let mut request: Value = serde_json::from_str(line).unwrap_or(Value::Null);
-            if !crate::rest::token_matches(request["token"].as_str()) {
-                let _ = writeln!(writer, "{}", crate::rest::unauthorized());
-                break;
-            }
-            if let Some(object) = request.as_object_mut() {
-                object.remove("token");
-            }
-            let resp = app.automation_op(&request.to_string());
-            if writeln!(writer, "{resp}").is_err() {
-                break;
-            }
-            let _ = writer.flush();
-        }
-    }
-}
-
 /// The entities inside block definitions: owned by (or listed in) a block
 /// record that is not a layout's model or paper space.
-fn definition_members(document: &document::Document) -> std::collections::HashSet<document::Handle> {
+fn definition_members(
+    document: &document::Document,
+) -> std::collections::HashSet<document::Handle> {
     let mut layouts: std::collections::HashSet<document::Handle> = document
         .objects
         .values()
@@ -278,7 +127,10 @@ fn err(msg: impl std::fmt::Display) -> Value {
 /// still honouring it. Built from the live constraint sets — the structure a
 /// document's `ASSOC2DCONSTRAINTGROUP` members decode to on load — so the read
 /// names the same constraints the solver enforces.
-pub(crate) fn constraint_records_json(scene: &crate::scene::Scene, entity: document::Handle) -> Value {
+pub(crate) fn constraint_records_json(
+    scene: &crate::scene::Scene,
+    entity: document::Handle,
+) -> Value {
     let mut records = Vec::new();
     for set in &scene.parametric_constraints {
         for constraint in set.constraints_referencing(entity) {
@@ -327,13 +179,7 @@ pub(crate) fn entity_type_matches(entity: &document::EntityType, requested: &str
     if record_name != "ENTITY" && record_name.eq_ignore_ascii_case(requested) {
         return true;
     }
-    // The node library's object names ("Construction Line", "2D Solid").
-    use crate::ui::node_graph::{ObjectKind, OBJECTS};
-    OBJECTS.iter().any(|kind| {
-        *kind != ObjectKind::Object
-            && kind.name().eq_ignore_ascii_case(requested)
-            && kind.matches(entity)
-    })
+    false
 }
 
 /// One entity as JSON. Summary mode carries identity only, geometry adds the
@@ -356,10 +202,7 @@ pub(crate) fn entity_json(
     let mut obj = json!({
         "handle": format!("{:X}", c.handle.value()),
         "type": crate::entities::names::ui_name(e),
-        "display_type": crate::plugin::entity_labels::display_type_title(
-            custom_label,
-            crate::entities::names::ui_name(e).to_string(),
-        ),
+        "display_type": custom_label.unwrap_or_else(|| crate::entities::names::ui_name(e).to_string()),
         "layer": c.layer,
         // The record that draws the entity: a layout's block record for
         // drawing geometry, a definition's for its children.
@@ -427,7 +270,9 @@ pub(crate) fn entity_json(
             map.insert("value".into(), json!(t.value));
             map.insert(
                 "text".into(),
-                json!(document::entities::mtext_format::parse_mtext(&t.value, true).to_plain_text()),
+                json!(
+                    document::entities::mtext_format::parse_mtext(&t.value, true).to_plain_text()
+                ),
             );
             map.insert("position".into(), v3(t.insertion_point));
             map.insert("height".into(), json!(t.height));
@@ -481,11 +326,13 @@ pub(crate) fn entity_json(
                     .edges
                     .iter()
                     .filter_map(|edge| match edge {
-                        document::entities::BoundaryEdge::Polyline(polyline) => Some(json!(polyline
-                            .vertices
-                            .iter()
-                            .map(|v| [v.x, v.y])
-                            .collect::<Vec<_>>())),
+                        document::entities::BoundaryEdge::Polyline(polyline) => {
+                            Some(json!(polyline
+                                .vertices
+                                .iter()
+                                .map(|v| [v.x, v.y])
+                                .collect::<Vec<_>>()))
+                        }
                         _ => None,
                     })
                     .collect();
@@ -652,7 +499,10 @@ fn is_generated_dimension_block_name(name: &str) -> bool {
 /// Save-time baking materializes a Dimension's graphics in an anonymous
 /// `*D<n>` block. Those members are derived display geometry, not additional
 /// logical drawing entities; named block members remain part of the manifest.
-fn is_dimension_display_entity(document: &document::Document, entity: &document::EntityType) -> bool {
+fn is_dimension_display_entity(
+    document: &document::Document,
+    entity: &document::EntityType,
+) -> bool {
     let owner = entity.common().owner_handle;
     document
         .block_records
@@ -727,9 +577,7 @@ fn audit_ascii_dxf_references(path: &std::path::Path) -> Result<Value, String> {
         if code == 0 {
             record_has_handle = false;
         } else if code == 5 || code == 105 {
-            if !std::mem::replace(&mut record_has_handle, true)
-                && !declared.insert(value.clone())
-            {
+            if !std::mem::replace(&mut record_has_handle, true) && !declared.insert(value.clone()) {
                 duplicate.insert(value.clone());
             }
         } else if [330, 340, 350, 360, 390].contains(&code) {
@@ -859,22 +707,9 @@ impl OpenCADStudio {
         })
     }
 
-    /// Serve what plugins posted from their worker threads since the last
-    /// request; the window's timer does this in the GUI.
-    pub(crate) fn pump_plugin_requests(&mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = self.update(super::Message::DrainPluginRequests);
-        }
-    }
-
     /// Handle one JSON request line and return the JSON response.
     #[cfg(any(test, not(target_arch = "wasm32")))]
     pub(crate) fn automation_op(&mut self, line: &str) -> Value {
-        // The plugin pump exists only on native targets (the plugins are
-        // native processes); on wasm this is a no-op.
-        #[cfg(not(target_arch = "wasm32"))]
-        self.pump_plugin_requests();
         if let Ok(req) = serde_json::from_str::<Value>(line) {
             if req["protocol"].is_number() {
                 let id = req["request_id"].clone();
@@ -891,18 +726,8 @@ impl OpenCADStudio {
             }
         }
         let res = self.automation_op_inner(line);
-        // Most automation ops mutate `Scene::selected` directly rather than
-        // going through `update()` (`select` calls `deselect_all` /
-        // `select_entity`, and `run` can erase the selected entities), so the
-        // selection check has to run on this path too.
         #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_selection_changed();
-        #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_document_changed();
-        // The `new` / `open` / template ops replace a tab's whole document;
-        // announce it on the same post-op boundary (API v9).
-        #[cfg(not(target_arch = "wasm32"))]
-        self.notify_plugins_document_opened();
+        self.notify_selection_changed();
         res
     }
 
@@ -1058,13 +883,9 @@ impl OpenCADStudio {
             "text_search" => self.automation_text_search(&req),
             "text_audit" => self.automation_text_audit(&req),
             "text_replace" => self.automation_text_replace(&req),
-            "blocks"
-            | "block_instances"
-            | "cad_get_blocks"
-            | "cad_extract_block_instances" => self.automation_blocks(&req),
-            "records" => self.record_query(&req),
-            "record_schema" => self.record_schema(&req),
-            "capabilities" => self.record_capabilities(),
+            "blocks" | "block_instances" | "cad_get_blocks" | "cad_extract_block_instances" => {
+                self.automation_blocks(&req)
+            }
             "layers" => {
                 let i = self.active_tab;
                 let offset = req["offset"].as_u64().unwrap_or(0) as usize;
@@ -1155,8 +976,9 @@ impl OpenCADStudio {
                 // the viewport. Membership is the record's own list, so a
                 // child whose stored owner is null is still recognised, and
                 // every other definition's children stay out of reach.
-                let editing: std::collections::HashSet<document::Handle> =
-                    scene.block_edit_block.map_or_else(Default::default, |definition| {
+                let editing: std::collections::HashSet<document::Handle> = scene
+                    .block_edit_block
+                    .map_or_else(Default::default, |definition| {
                         scene
                             .document
                             .block_records
@@ -1235,8 +1057,7 @@ impl OpenCADStudio {
                         .document
                         .entities()
                         .filter(|e| {
-                            e.common().owner_handle == space
-                                || listed.contains(&e.common().handle)
+                            e.common().owner_handle == space || listed.contains(&e.common().handle)
                         })
                         .filter(|e| type_filter.is_none_or(|t| entity_type_matches(e, t)))
                         .filter(|e| layer_filter.is_none_or(|l| e.common().layer == l))
@@ -1545,7 +1366,7 @@ impl OpenCADStudio {
                             .as_ref()
                             .and_then(|properties| properties.pointer(path))
                     };
-                    match crate::app::record_api::compare(
+                    match crate::app::record_compare::compare(
                         actual,
                         filter["op"].as_str().unwrap_or("eq"),
                         filter.get("value"),
@@ -1596,12 +1417,7 @@ impl OpenCADStudio {
             if near.is_some() && nearest.is_none() {
                 continue;
             }
-            let mut entity = entity_json(
-                &tab.scene.document,
-                e,
-                detail,
-                crate::plugin::entity_labels::custom_entity_class_label(&self.disabled_plugins, e),
-            );
+            let mut entity = entity_json(&tab.scene.document, e, detail, None);
             entity.as_object_mut().expect("entity JSON object").insert(
                 "space".into(),
                 space_names
@@ -2042,319 +1858,6 @@ mod tests {
         let lines = app.automation_op(r#"{"op":"query","type":"Line"}"#);
         assert_eq!(lines["entities"][0]["layer"], "Annotations");
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn built_in_edits_advance_plugin_document_fingerprint_once() {
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let before = app.last_plugin_document.expect("new drawing published");
-        app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
-        let after = app.last_plugin_document.expect("line edit published");
-        assert_eq!(after.0, app.tabs[app.active_tab].id);
-        assert_ne!(after, before);
-        assert_eq!(after.1, app.tabs[app.active_tab].scene.geometry_epoch);
-        app.automation_op(r#"{"op":"query","type":"Line"}"#);
-        assert_eq!(app.last_plugin_document, Some(after));
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn plugin_edit_publication_is_not_repeated_at_message_boundary() {
-        use document::entities::Point;
-        use document::EntityType;
-
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let tab = app.active_tab;
-        let mut host = super::super::plugin_host::HostSession::new(&mut app, tab);
-        host.add_entity(EntityType::Point(Point::new()));
-        let published = app.last_plugin_document.expect("plugin write published");
-        app.notify_plugins_document_changed();
-        assert_eq!(app.last_plugin_document, Some(published));
-    }
-
-    // ── Native-plugin notification dispatch (API v9) ─────────────────────
-    //
-    // The app-level tests observe the dispatch seam in
-    // `plugin::v4_support`: one recorded entry stands for one broadcast to
-    // every loaded native plugin, so counts here are counts per plugin. The
-    // write-semantics rule under test: dispatch happens at the message
-    // boundary — after the mutation settled, never mid-undo/mid-pick — so
-    // handlers may write through the plugin host API, and the fingerprint
-    // guards plus idempotent re-marks keep that loop finite.
-
-    fn plugin_dispatch_log() -> Vec<String> {
-        crate::plugin::v4_support::take_test_dispatch_log()
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn an_edit_dispatches_document_changed_once_per_epoch() {
-        use document::entities::Point;
-        use document::EntityType;
-
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let _ = plugin_dispatch_log();
-        let tab = app.active_tab;
-
-        let mut host = super::super::plugin_host::HostSession::new(&mut app, tab);
-        host.add_entity(EntityType::Point(Point::new()));
-        drop(host);
-        app.notify_plugins_document_changed();
-
-        let epoch = app.tabs[tab].scene.geometry_epoch;
-        let log = plugin_dispatch_log();
-        let changed: Vec<_> = log
-            .iter()
-            .filter(|entry| *entry == &format!("DocumentChanged({epoch})"))
-            .collect();
-        assert_eq!(
-            changed.len(),
-            1,
-            "one settled edit dispatches exactly one DocumentChanged per plugin: {log:?}"
-        );
-
-        // The same epoch at the next boundary dispatches nothing further.
-        app.notify_plugins_document_changed();
-        let log = plugin_dispatch_log();
-        assert!(
-            log.iter()
-                .all(|entry| *entry != format!("DocumentChanged({epoch})")),
-            "the fingerprint guard suppresses duplicate dispatches: {log:?}"
-        );
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn a_selection_change_dispatches_selection_changed() {
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
-        let _ = plugin_dispatch_log();
-        let i = app.active_tab;
-
-        let handle = app.tabs[i]
-            .scene
-            .document
-            .entities()
-            .next()
-            .expect("the drawn line")
-            .common()
-            .handle;
-        let selection: rustc_hash::FxHashSet<document::Handle> = std::iter::once(handle).collect();
-        app.tabs[i].scene.replace_selection(selection);
-        app.notify_plugins_selection_changed();
-
-        let log = plugin_dispatch_log();
-        assert!(
-            log.contains(&"SelectionChanged(1 handles)".to_string()),
-            "a real selection change dispatches SelectionChanged: {log:?}"
-        );
-
-        // Unchanged selection at the next boundary: nothing further.
-        app.notify_plugins_selection_changed();
-        let log = plugin_dispatch_log();
-        assert_eq!(log.len(), 0, "no duplicate dispatch: {log:?}");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn a_document_open_dispatches_document_opened_once() {
-        let mut app = super::OpenCADStudio::new_for_test();
-        let _ = plugin_dispatch_log();
-
-        app.automation_op(r#"{"op":"new"}"#);
-        let tab_id = app.tabs[app.active_tab].id;
-        let log = plugin_dispatch_log();
-        let opened: Vec<_> = log
-            .iter()
-            .filter(|entry| **entry == format!("DocumentOpened({tab_id})"))
-            .collect();
-        assert_eq!(
-            opened.len(),
-            1,
-            "a new document announces exactly one open: {log:?}"
-        );
-
-        // A follow-up op does not repeat it: the tab's pending flag cleared.
-        app.automation_op(r#"{"op":"query","type":"Line"}"#);
-        let log = plugin_dispatch_log();
-        assert!(
-            log.iter()
-                .all(|entry| *entry != format!("DocumentOpened({tab_id})")),
-            "no duplicate open dispatch: {log:?}"
-        );
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn a_file_open_dispatches_document_opened_through_the_message_flow() {
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let path =
-            std::env::temp_dir().join(format!("ocs_opened_dispatch_{}.dxf", std::process::id(),));
-        crate::io::save(&app.tabs[app.active_tab].scene.document, &path)
-            .expect("save the open fixture");
-
-        app.opening = Some(crate::app::OpenProgress {
-            id: 7,
-            name: "ocs_opened_dispatch.dxf".to_string(),
-            source_path: Some(path.clone()),
-            size_bytes: 0,
-            state: std::sync::Arc::new(crate::io::OpenProgressState::new(
-                crate::app::OPEN_PHASE_CACHING,
-            )),
-            started: std::time::Instant::now(),
-            recovery_error: None,
-            recovery_read_stats: None,
-            fingerprint: None,
-        });
-        let bytes = std::fs::read(&path).expect("read the fixture back");
-        let document = crate::io::load_bytes_finalized(&path, bytes).expect("reparse the fixture");
-        let caches = crate::scene::build_derived_caches_with_progress(&document, &|_| {}, None);
-        let _ = plugin_dispatch_log();
-        let _ = app.update(crate::app::Message::FileOpened(
-            7,
-            Ok((
-                "ocs_opened_dispatch.dxf".to_string(),
-                path.clone(),
-                document,
-                caches,
-            )),
-        ));
-
-        let tab_id = app.tabs[app.active_tab].id;
-        let log = plugin_dispatch_log();
-        let opened: Vec<_> = log
-            .iter()
-            .filter(|entry| **entry == format!("DocumentOpened({tab_id})"))
-            .collect();
-        assert_eq!(
-            opened.len(),
-            1,
-            "the file-open message announces exactly one open: {log:?}"
-        );
-        // The next message boundary does not repeat it.
-        app.notify_plugins_document_opened();
-        let log = plugin_dispatch_log();
-        assert_eq!(log.len(), 0, "the pending flag dedupes: {log:?}");
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn idempotent_designation_remarks_cannot_loop_the_dispatch() {
-        use document::entities::Point;
-        use document::EntityType;
-
-        // Models the consumer plugin's re-mark handler: on DocumentChanged it
-        // re-marks its entities through the plugin host API. The write goes
-        // through, but because a re-mark of already-designated geometry is a
-        // documented no-op — no epoch bump, no undo step, no publish — the
-        // notification loop terminates instead of feeding itself.
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let _ = plugin_dispatch_log();
-        let tab = app.active_tab;
-
-        let mut host = super::super::plugin_host::HostSession::new(&mut app, tab);
-        let handle = host.add_entity(EntityType::Point(Point::new()));
-        host.set_reference_only(handle, true).expect("mark");
-        // The handler's "write": an idempotent re-mark after the notification.
-        host.set_reference_only(handle, true)
-            .expect("idempotent re-mark");
-        drop(host);
-        assert!(app.tabs[tab].scene.is_reference_only(handle));
-
-        app.notify_plugins_document_changed();
-        let epoch = app.tabs[tab].scene.geometry_epoch;
-        let log = plugin_dispatch_log();
-        let changed: Vec<_> = log
-            .iter()
-            .filter(|entry| **entry == format!("DocumentChanged({epoch})"))
-            .collect();
-        assert_eq!(
-            changed.len(),
-            1,
-            "the designation write dispatched once, not one per re-mark: {log:?}"
-        );
-
-        // A further boundary run finds the same epoch: the loop has ended.
-        app.notify_plugins_document_changed();
-        let log = plugin_dispatch_log();
-        assert_eq!(log.len(), 0, "idempotent re-marks emit nothing: {log:?}");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn history_replay_emits_no_plugin_notifications_itself() {
-        use document::entities::Point;
-        use document::EntityType;
-
-        // Undo/redo replay never publishes: the notification boundary is the
-        // only channel, so replaying history steps in isolation is silent.
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let _ = plugin_dispatch_log();
-        let tab = app.active_tab;
-
-        let mut host = super::super::plugin_host::HostSession::new(&mut app, tab);
-        let handle = host.add_entity(EntityType::Point(Point::new()));
-        host.set_reference_only(handle, true).expect("mark");
-        drop(host);
-
-        let _ = plugin_dispatch_log();
-        app.undo_steps(1);
-        assert!(
-            !app.tabs[tab].scene.is_reference_only(handle),
-            "undo reverted the designation"
-        );
-        let log = plugin_dispatch_log();
-        assert_eq!(
-            log.len(),
-            0,
-            "history replay itself emits no plugin notifications: {log:?}"
-        );
-
-        app.redo_steps(1);
-        assert!(app.tabs[tab].scene.is_reference_only(handle));
-        let log = plugin_dispatch_log();
-        assert_eq!(log.len(), 0, "redo replay is equally silent: {log:?}");
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn dispatching_without_loaded_plugins_leaves_the_app_state_untouched() {
-        // The default `on_notification` is a no-op; with no plugin processes
-        // loaded, a full boundary pass must not disturb the host.
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let i = app.active_tab;
-        let epoch = app.tabs[i].scene.geometry_epoch;
-        let selected: Vec<document::Handle> = app.tabs[i].scene.selected.iter().copied().collect();
-
-        let _ = plugin_dispatch_log();
-        app.notify_plugins_selection_changed();
-        app.notify_plugins_document_changed();
-        app.notify_plugins_document_opened();
-        let log = plugin_dispatch_log();
-
-        assert_eq!(app.tabs[i].scene.geometry_epoch, epoch);
-        assert_eq!(
-            app.tabs[i]
-                .scene
-                .selected
-                .iter()
-                .copied()
-                .collect::<Vec<_>>(),
-            selected
-        );
-        assert!(
-            log.iter().all(|entry| !entry.starts_with("DocumentOpened")),
-            "a start-tab-free app does not announce spurious opens: {log:?}"
-        );
-    }
     use crate::app::{Message, OpenCADStudio};
     use serde_json::{json, Value};
 
@@ -2436,7 +1939,9 @@ mod tests {
         dimension.definition_point = Vector3::new(0.0, 5.0, 0.0);
         dimension.base.text_middle_point = Vector3::new(5.0, 5.0, 0.0);
         document
-            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(dimension))))
+            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(
+                dimension,
+            ))))
             .unwrap();
         crate::modules::draw::modify::explode::bake_dimension_blocks(&mut document);
 
@@ -2459,7 +1964,9 @@ mod tests {
         dimension.base.text_middle_point = Vector3::new(5.0, 5.0, 0.0);
         app.tabs[app.active_tab]
             .scene
-            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(dimension))));
+            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(
+                dimension,
+            ))));
         let path = std::env::temp_dir().join(format!(
             "ocs_verified_dimension_{}_{}.dwg",
             std::process::id(),
@@ -2497,7 +2004,9 @@ mod tests {
         let i = app.active_tab;
         app.tabs[i]
             .scene
-            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(dimension))));
+            .add_entity(EntityType::Dimension(Box::new(Dimension::Linear(
+                dimension,
+            ))));
         let path = std::env::temp_dir().join(format!(
             "ocs_verified_dimension_follow_up_{}_{}.dwg",
             std::process::id(),
@@ -2609,7 +2118,11 @@ mod tests {
         assert_eq!(audit["duplicate_handles"], serde_json::json!([]), "{audit}");
         std::fs::write(&path, "  0\nTEXT\n  5\n2F\n  0\nLINE\n  5\n2F\n").unwrap();
         let audit = super::audit_ascii_dxf_references(&path).unwrap();
-        assert_eq!(audit["duplicate_handles"], serde_json::json!(["2F"]), "{audit}");
+        assert_eq!(
+            audit["duplicate_handles"],
+            serde_json::json!(["2F"]),
+            "{audit}"
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -2960,13 +2473,9 @@ mod tests {
         let r = app.automation_op(r#"{"op":"select","clear":true,"window":[3,3,12,12]}"#);
         assert_eq!(r["selected"], 0, "window only grazing the circle: {r}");
 
-        let r = app.automation_op(
-            r#"{"op":"select","clear":true,"window":[3,3,12,12],"crossing":true}"#,
-        );
-        assert_eq!(
-            r["selected"], 1,
-            "crossing box over the circle's edge: {r}"
-        );
+        let r = app
+            .automation_op(r#"{"op":"select","clear":true,"window":[3,3,12,12],"crossing":true}"#);
+        assert_eq!(r["selected"], 1, "crossing box over the circle's edge: {r}");
     }
 
     /// The third ask of the same reading: a block reference had to be picked
@@ -3037,9 +2546,8 @@ mod tests {
         insert.rotation = 30.0_f64.to_radians();
         app.tabs[i].scene.add_entity(EntityType::Insert(insert));
 
-        let r = app.automation_op(
-            r#"{"op":"query","type":"INSERT","detail":"full","fields":["bounds"]}"#,
-        );
+        let r = app
+            .automation_op(r#"{"op":"query","type":"INSERT","detail":"full","fields":["bounds"]}"#);
         let bounds = &r["entities"][0]["bounds"];
         let at = |path: &str, axis: usize| bounds[path][axis].as_f64().unwrap();
         assert!((at("min", 0) - 90.0).abs() < 1e-3, "box min x: {bounds}");
@@ -3195,14 +2703,6 @@ mod tests {
         ));
         assert_eq!(r["ok"], false);
         assert_eq!(r["code"], "session_changed");
-    }
-
-    #[test]
-    fn ready_line_carries_the_session_id() {
-        // ready() is the free function behind the --serve greeting.
-        let r = super::ready();
-        assert_eq!(r["ok"], true);
-        assert_eq!(r["session_id"], crate::app::control::session_id());
     }
 
     #[test]
@@ -3411,8 +2911,10 @@ mod tests {
         let mut app = OpenCADStudio::new_for_test();
         app.automation_op(r#"{"op":"new"}"#);
         let i = app.active_tab;
-        let mtext =
-            document::MText::with_value("\\A1;10.5000", document::types::Vector3::new(10.0, 20.0, 0.0));
+        let mtext = document::MText::with_value(
+            "\\A1;10.5000",
+            document::types::Vector3::new(10.0, 20.0, 0.0),
+        );
         app.tabs[i]
             .scene
             .add_entity(document::EntityType::MText(Box::new(mtext)));
@@ -3426,23 +2928,6 @@ mod tests {
         let min_x = q["entities"][0]["bounds"]["min"][0].as_f64().unwrap();
         let max_x = q["entities"][0]["bounds"]["max"][0].as_f64().unwrap();
         assert!(max_x > min_x, "text bounds must have width");
-    }
-
-    #[test]
-    fn capabilities_advertise_the_file_operations() {
-        let mut app = OpenCADStudio::new_for_test();
-        let caps = app.automation_op(r#"{"op":"capabilities"}"#);
-        assert_eq!(caps["operations"]["wblock"], true);
-        assert_eq!(caps["operations"]["plot"], true);
-        assert_eq!(caps["operations"]["embed_image"], true);
-        assert_eq!(caps["operations"]["batch"], true);
-        assert_eq!(caps["operations"]["entities_create"], true);
-        assert_eq!(caps["operations"]["entities_delete"], true);
-        assert_eq!(caps["operations"]["entities_transform"], true);
-        assert_eq!(caps["operations"]["block_define"], true);
-        assert_eq!(caps["operations"]["xdata_set"], true);
-        assert_eq!(caps["operations"]["xdata_get"], true);
-        assert_eq!(caps["operations"]["view_focus"], true);
     }
 
     // ---------- entity operations (P0) ----------
@@ -3765,10 +3250,7 @@ mod tests {
             close(max[0].as_f64().unwrap(), 0.0),
             "it ends at x 0: {bounds}"
         );
-        assert!(
-            close(max[1].as_f64().unwrap(), 40.0),
-            "and y 40: {bounds}"
-        );
+        assert!(close(max[1].as_f64().unwrap(), 40.0), "and y 40: {bounds}");
     }
 
     #[test]
@@ -3982,8 +3464,16 @@ mod tests {
             .iter()
             .find(|entity| entity["space"] == "SPACE_SRC")
             .unwrap_or_else(|| panic!("the definition's line is missing: {q}"));
-        assert_eq!(in_definition["owner"], format!("{definition:X}"), "{in_definition}");
-        assert_ne!(in_definition["handle"], handles[1].as_str(), "{in_definition}");
+        assert_eq!(
+            in_definition["owner"],
+            format!("{definition:X}"),
+            "{in_definition}"
+        );
+        assert_ne!(
+            in_definition["handle"],
+            handles[1].as_str(),
+            "{in_definition}"
+        );
     }
 
     #[test]
@@ -4064,15 +3554,6 @@ mod tests {
             find(second)
         );
 
-        // The record stream is the read that found no association at all.
-        let records = app.automation_op(r#"{"op":"records","collection":"entities"}"#);
-        let records = records["records"].as_array().expect("entity records");
-        let record = records
-            .iter()
-            .find(|record| record["handle"] == hex(first).as_str())
-            .unwrap_or_else(|| panic!("{} is missing from the record stream", hex(first)));
-        assert_eq!(record["constraints"], parallel, "{record}");
-
         // Summary detail is identity only; constraints start at geometry.
         let summary = app.automation_op(r#"{"op":"query","type":"Line","detail":"summary"}"#);
         for entity in summary["entities"].as_array().expect("summary entities") {
@@ -4130,8 +3611,16 @@ mod tests {
             let set = app.tabs[i]
                 .scene
                 .parametric_constraint_set_mut(ParametricScope::ModelSpace);
-            set.add(ConstraintKind::Horizontal, vec![ParametricRef::whole(line)], None);
-            set.add(ConstraintKind::Horizontal, vec![ParametricRef::whole(line)], None);
+            set.add(
+                ConstraintKind::Horizontal,
+                vec![ParametricRef::whole(line)],
+                None,
+            );
+            set.add(
+                ConstraintKind::Horizontal,
+                vec![ParametricRef::whole(line)],
+                None,
+            );
         }
         app.tabs[i]
             .scene
@@ -4344,7 +3833,10 @@ mod tests {
         // Anything else leaves it alone.
         app.automation_op(r#"{"op":"run","cmd":"MSLTSCALE 2"}"#);
         assert!(app.tabs[i].scene.model_linetype_scaling());
-        assert!(app.tabs[i].active_cmd.is_none(), "command must have finished");
+        assert!(
+            app.tabs[i].active_cmd.is_none(),
+            "command must have finished"
+        );
     }
 
     #[test]
@@ -4454,15 +3946,7 @@ mod tests {
             .and_then(|s| s.split('}').next())
             .expect("the start_allowed gate moved — re-point this test");
         // Welcome-page links plus app-wide configuration commands.
-        let standalone = [
-            "DONATE",
-            "REPORT",
-            "WEBVERSION",
-            "ABOUT",
-            "CHANGELOG",
-            "CUI",
-            "ALIASEDIT",
-        ];
+        let standalone = ["ABOUT", "CUI", "ALIASEDIT"];
         for cmd in standalone {
             assert!(
                 gate.contains(&format!("\"{cmd}\"")),
@@ -4539,8 +4023,7 @@ mod tests {
             // Deterministically simulate an intentional hold-to-lasso.
             // A fast click+move must no longer activate a lasso just
             // because the cursor crossed the old 24 px shortcut.
-            let held_since =
-                iced::time::Instant::now() - std::time::Duration::from_millis(260);
+            let held_since = iced::time::Instant::now() - std::time::Duration::from_millis(260);
             app.tabs[i]
                 .scene
                 .selection
@@ -4597,7 +4080,10 @@ mod tests {
         let _ = app.update(Message::ViewportMove(moved));
         {
             let sel = app.tabs[i].scene.selection.borrow();
-            assert!(!sel.input.left_dragging, "fast first click must win over lasso");
+            assert!(
+                !sel.input.left_dragging,
+                "fast first click must win over lasso"
+            );
             assert!(!sel.gesture.poly_active, "the lasso must not arm");
         }
         let _ = app.update(Message::ViewportLeftRelease);
@@ -4815,7 +4301,9 @@ mod tests {
         let mut dst_mtext = MText::new();
         dst_mtext.value = "DSTM".into();
         dst_mtext.height = 2.0;
-        let dst_mtext_h = app.tabs[i].scene.add_entity(EntityType::MText(Box::new(dst_mtext)));
+        let dst_mtext_h = app.tabs[i]
+            .scene
+            .add_entity(EntityType::MText(Box::new(dst_mtext)));
 
         // Drive the interactive command exactly as the viewport does:
         // phase 1 source pick, phase 2 destination selection.
@@ -4866,10 +4354,7 @@ mod tests {
         let mut destination = Line::new();
         destination.start = Vector3::new(30.0, 0.0, 0.0);
         destination.end = Vector3::new(40.0, 10.0, 0.0);
-        let destination_h = app
-            .tabs[i]
-            .scene
-            .add_entity(EntityType::Line(destination));
+        let destination_h = app.tabs[i].scene.add_entity(EntityType::Line(destination));
 
         let _ = app.run_command_line("MATCHPROP");
         let _ = app.feed_command(StepInput::EntityPick(source_h, glam::DVec3::ZERO));
@@ -5560,173 +5045,12 @@ mod tests {
         let _ = app.view(wid);
     }
 
-    /// A JSON-lines client streaming one endless line must not be buffered
-    /// (or processed) without bound: `BufRead::lines` grows its `String` by
-    /// doubling until the allocation aborts the process — an abort nobody
-    /// upstream can catch. The connection is dropped at the cap instead.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn serve_socket_drops_a_client_streaming_an_oversize_line() {
-        use std::io::{BufRead, BufReader, Write};
-        use std::net::TcpStream;
-        use std::sync::atomic::{AtomicU16, Ordering};
-        use std::sync::Arc;
-
-        let bound = Arc::new(AtomicU16::new(0));
-        let listen_bound = bound.clone();
-        std::thread::spawn(move || {
-            let mut app = super::OpenCADStudio::new_for_test();
-            super::serve_socket(&mut app, 0, &listen_bound);
-        });
-        let mut port = 0;
-        for _ in 0..50 {
-            port = bound.load(Ordering::SeqCst);
-            if port != 0 {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        assert_ne!(port, 0, "listener never bound a port");
-
-        let client = TcpStream::connect(("127.0.0.1", port)).expect("connect");
-        client
-            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-            .expect("read timeout");
-        let mut reader = BufReader::new(client.try_clone().expect("clone"));
-        let mut banner = String::new();
-        reader.read_line(&mut banner).expect("ready banner");
-        assert!(banner.contains("ready"), "{banner}");
-
-        // Stream >64 MiB without a newline from its own thread: the payload
-        // dwarfs any socket buffer, so one thread would deadlock writing
-        // before the server reads.
-        let mut writer = client.try_clone().expect("clone");
-        let payload = std::thread::spawn(move || {
-            let chunk = vec![b'A'; 1024 * 1024];
-            for _ in 0..65 {
-                if writer.write_all(&chunk).is_err() {
-                    return;
-                }
-            }
-            let _ = writer.write_all(b"\n");
-            let _ = writer.flush();
-        });
-
-        // The server must drop the connection WITHOUT answering: a response
-        // means the oversize line was read whole and handed to the dispatcher.
-        let mut response = String::new();
-        let read = reader.read_line(&mut response);
-        assert_eq!(
-            read.unwrap_or(0),
-            0,
-            "oversize line must be dropped, not processed — got: {response:?}"
-        );
-        payload.join().unwrap();
-    }
-
-    /// A client that connects and says nothing must not hold the automation
-    /// port forever: `serve_socket` serves one client at a time, so a read
-    /// that never completes (no timeout was ever set on this path, unlike
-    /// `rest.rs`, `http_bridge.rs` and `control::transport`) wedges the
-    /// accept loop and every later client hangs waiting for the `ready`
-    /// banner. The server drops an idle connection at its timeout and goes
-    /// back to accepting.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn serve_socket_drops_an_idle_client_and_keeps_serving() {
-        use std::io::{BufRead, BufReader};
-        use std::net::TcpStream;
-        use std::sync::atomic::{AtomicU16, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
-
-        let bound = Arc::new(AtomicU16::new(0));
-        let listen_bound = bound.clone();
-        std::thread::spawn(move || {
-            let mut app = super::OpenCADStudio::new_for_test();
-            super::serve_socket_with_idle(&mut app, 0, &listen_bound, Duration::from_millis(300));
-        });
-        let mut port = 0;
-        for _ in 0..50 {
-            port = bound.load(Ordering::SeqCst);
-            if port != 0 {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        assert_ne!(port, 0, "listener never bound a port");
-
-        let first = TcpStream::connect(("127.0.0.1", port)).expect("connect first client");
-        first
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("read timeout");
-        let mut reader = BufReader::new(first.try_clone().expect("clone"));
-        let mut banner = String::new();
-        reader.read_line(&mut banner).expect("ready banner");
-        assert!(banner.contains("ready"), "{banner}");
-
-        // Say nothing: the server must drop the idle connection at its read
-        // timeout instead of holding the accept loop hostage.
-        let mut tail = String::new();
-        let read = reader.read_line(&mut tail).unwrap_or_else(|error| {
-            panic!("idle connection must be closed by the server, blocked instead: {error}")
-        });
-        assert_eq!(read, 0, "idle connection must see EOF, got {tail:?}");
-
-        // And the port must still serve the next client.
-        let second = TcpStream::connect(("127.0.0.1", port)).expect("connect second client");
-        second
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("read timeout");
-        let mut reader2 = BufReader::new(second.try_clone().expect("clone"));
-        let mut banner2 = String::new();
-        reader2
-            .read_line(&mut banner2)
-            .expect("second ready banner");
-        assert!(banner2.contains("ready"), "{banner2}");
-    }
-
     #[test]
     fn entity_json_display_type_is_native_without_a_label() {
         let entity = document::EntityType::Point(document::entities::Point::new());
         let json = super::entity_json(&document::Document::new(), &entity, "summary", None);
         assert_eq!(json["type"], "Point");
         assert_eq!(json["display_type"], "Point");
-    }
-
-    #[test]
-    fn entity_json_display_type_qualifies_the_label() {
-        let entity = document::EntityType::Point(document::entities::Point::new());
-        let json = super::entity_json(
-            &document::Document::new(),
-            &entity,
-            "summary",
-            Some("Survey Point".to_string()),
-        );
-        assert_eq!(json["type"], "Point");
-        assert_eq!(json["display_type"], "Survey Point (Point)");
-    }
-
-    #[test]
-    fn query_reports_native_display_type_for_plugin_classed_entities() {
-        // End-to-end through the automation query surface: an entity stamped
-        // with a plugin class identity keeps the native display while no
-        // declaring plugin is loaded (labels activate only through the live
-        // plugin manager, which the test harness does not populate).
-        let mut app = super::OpenCADStudio::new_for_test();
-        app.automation_op(r#"{"op":"new"}"#);
-        let i = app.active_tab;
-        let mut entity = document::EntityType::Point(document::entities::Point::new());
-        let mut record = document::xdata::ExtendedDataRecord::new("CVIFC");
-        record.add_value(document::xdata::XDataValue::String(
-            "CVIFC-CLASS:POINTMARK".to_string(),
-        ));
-        entity.common_mut().extended_data.add_record(record);
-        app.tabs[i].scene.add_entity(entity);
-
-        let query = app.automation_op(r#"{"op":"query","type":"Point"}"#);
-        assert_eq!(query["entities"][0]["type"], "Point");
-        assert_eq!(query["entities"][0]["display_type"], "Point");
     }
 }
 
@@ -5757,8 +5081,10 @@ mod mtext_loss_tests {
         app.tabs
             .push(crate::app::tab_document::DocumentTab::new_drawing(1));
         app.active_tab = 1;
-        let mut text =
-            document::entities::MText::with_value("rich", document::types::Vector3::new(0., 0., 0.));
+        let mut text = document::entities::MText::with_value(
+            "rich",
+            document::types::Vector3::new(0., 0., 0.),
+        );
         text.column_data.column_type = 1;
         text.column_data.column_count = 2;
         text.rectangle_height = Some(30.);
@@ -5920,18 +5246,5 @@ mod mtext_loss_tests {
         let new = dir.join("new.dwg");
         assert_eq!(super::export_headless(&input, &new, Some("2018"), false), 0);
         std::fs::remove_dir_all(&dir).ok();
-    }
-}
-
-#[cfg(test)]
-mod type_name_tests {
-    /// #2592: Objects By Type takes the names the node library shows.
-    #[test]
-    fn the_node_library_names_find_their_objects() {
-        let xline = document::EntityType::XLine(Default::default());
-        assert!(super::entity_type_matches(&xline, "Construction Line"));
-        assert!(super::entity_type_matches(&xline, "XLine"));
-        assert!(!super::entity_type_matches(&xline, "Line"));
-        assert!(!super::entity_type_matches(&xline, "Object"));
     }
 }

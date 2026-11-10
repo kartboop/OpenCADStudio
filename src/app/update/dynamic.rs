@@ -3,9 +3,7 @@
 #![allow(unused_imports)]
 use super::util::*;
 use super::{format_size, VIEWCUBE_HIT_SIZE};
-use crate::app::helpers::{
-    parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind,
-};
+use crate::app::helpers::{parse_coord, ucs_rotate_vec, ucs_to_wcs, ucs_z_axis, CoordKind};
 use crate::app::{Message, OpenCADStudio, POLY_START_DELAY_MS};
 use crate::modules::ModuleEvent;
 use crate::scene::model::object::GripApply;
@@ -119,14 +117,6 @@ impl OpenCADStudio {
                     (grip.origin_world, None)
                 }
             });
-        // A plugin grip drags like a native stretch grip.
-        #[cfg(not(target_arch = "wasm32"))]
-        let grip_input = grip_input.or_else(|| {
-            self.tabs[i]
-                .active_plugin_grip
-                .as_ref()
-                .map(|grip| (grip.origin_world, None))
-        });
 
         if let Some((origin, scalar_role)) = grip_input {
             let wanted_roles: Vec<crate::command::DynRole> = if rectangle_frame.is_some() {
@@ -907,7 +897,9 @@ impl OpenCADStudio {
             parameter_hidden = Some(hidden);
             wires
         } else if let Some(preview) = parameter_preview {
-            self.tabs[i].scene.set_command_preview_hatches(preview.hatches);
+            self.tabs[i]
+                .scene
+                .set_command_preview_hatches(preview.hatches);
             parameter_hidden = Some(preview.hidden);
             preview.wires
         } else if let Some(wires) = self.dimension_preview_wires(i, cur) {
@@ -986,9 +978,9 @@ impl OpenCADStudio {
 #[cfg(test)]
 mod tests {
     use super::eval_dynamic_angle;
-    use crate::entities::common::{set_unit_context, unit_context};
     use crate::app::OpenCADStudio;
     use crate::command::{CadCommand, CmdResult, FromPointCommand};
+    use crate::entities::common::{set_unit_context, unit_context};
     use crate::scene::WireModel;
     use glam::DVec3;
 

@@ -8,8 +8,6 @@ pub(crate) mod block_cmdline;
 pub(crate) mod content_browser;
 pub(crate) mod create_block;
 pub(crate) mod design_center;
-pub(crate) mod dgn_import;
-pub(crate) mod tds_import;
 pub(crate) mod edit_block;
 pub(crate) mod hyperlink_cmd;
 pub(crate) mod image_transparency;
@@ -26,7 +24,6 @@ pub(crate) mod pdf_import;
 pub(crate) mod pdf_shx_text;
 pub(crate) mod picker;
 mod snap_underlays;
-pub(crate) mod solid3d_cmds;
 mod underlay_layers;
 pub(crate) mod wblock;
 pub(crate) mod xadjust;
@@ -181,8 +178,7 @@ impl CadModule for InsertModule {
                             icon: IMPORT_ICON,
                             items: vec![
                                 ("PDFIMPORT;FILE", "PDF Import", underlay_layers::ICON),
-                                ("DGNIMPORT", "DGN Import", underlay_layers::ICON),
-                                ("IMPORT", "Import…", IMPORT_ICON),
+                                ("SVGIN", "SVG Import", IMPORT_ICON),
                             ],
                             default: "PDFIMPORT;FILE",
                         },
@@ -251,9 +247,7 @@ impl CadModule for InsertModule {
                         RibbonItem::LabeledTool(
                             crate::modules::annotate::data_link::download_tool(),
                         ),
-                        RibbonItem::LabeledTool(
-                            crate::modules::annotate::data_link::upload_tool(),
-                        ),
+                        RibbonItem::LabeledTool(crate::modules::annotate::data_link::upload_tool()),
                         RibbonItem::LabeledTool(ToolDef {
                             label: "Extract Data",
                             ..crate::modules::annotate::data_extract::tool()

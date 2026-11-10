@@ -1,6 +1,6 @@
 ---
 summary: Imports an SVG file as a new block and lets you place it in the drawing.
-related: IMPORT, WMFIN, INSERT
+related: INSERT
 ---
 
 ## Usage

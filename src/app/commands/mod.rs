@@ -9,29 +9,28 @@ mod block_cmdline;
 mod blocks;
 mod blockvars;
 mod center_vars;
-mod revcloud_vars;
 pub(crate) mod purge;
+mod revcloud_vars;
 pub(crate) use purge::purge_pass;
 mod block_editor_vars;
 mod bvisibility;
 mod count;
 mod dash;
-mod dgn_import;
 mod dim;
 mod dim_cmd;
 mod dim_inspect;
 mod dim_layer;
-mod layer_variable;
-pub(crate) mod extraction_eval;
-mod mleader_layer;
 pub(crate) mod display;
 mod draw;
+pub(crate) mod extraction_eval;
 mod field;
+mod fileops;
 mod group_display;
 mod hatch_dialogs;
 mod hatch_vars;
-mod fileops;
+mod layer_variable;
 mod log_file;
+mod mleader_layer;
 pub(crate) use log_file::write_line as write_log_line;
 pub(crate) use log_file::{
     log_file_folder_setting, log_file_mode, set_log_file_folder, set_log_file_mode,
@@ -42,7 +41,6 @@ pub(crate) use hyperlink::{hyperlink_options, set_hyperlink_options};
 mod inquiry;
 mod layerprops;
 mod layers;
-mod model_import;
 mod ole;
 pub(crate) use ole::{ole_quality, set_ole_quality};
 mod pc_colormap;
@@ -52,15 +50,16 @@ pub(crate) mod pdf_import;
 mod pdf_password;
 mod pdf_shx_text;
 mod pdf_underlay;
+mod picture_import;
 mod plotvars;
 mod point_cloud;
 mod refedit;
 pub(crate) mod sheet_set;
 mod spell;
-pub(in crate::app) mod table_cells;
 mod styleprops;
-mod text_edit;
+pub(in crate::app) mod table_cells;
 mod table_style_var;
+mod text_edit;
 mod text_layer;
 mod ucsfollow;
 mod view;
@@ -225,88 +224,6 @@ impl OpenCADStudio {
             })
     }
 
-    /// API v15: run a picked quad item's `quadplugin:` action host-side. The
-    /// pick router (`on_quad_pick`) routes the scheme here INSTEAD of the
-    /// generic dispatcher: plugin quad actions are impossible by typed /
-    /// automation / script input — `try_dispatch_command` answers
-    /// `quadplugin:` with the ordinary unknown-command path — so this method
-    /// is the only door to the pick surface. The triple resolves against the
-    /// quad store (`QuadStore::resolve`, no visibility filtering; the
-    /// liveness guard below is the pick path's own):
-    ///
-    /// - `Command(verb)` dispatches the verb exactly like a plain quad item
-    ///   (the `Message::Command` path) — the review's dead-tile fix.
-    /// - `Callback` publishes the owner-targeted `QuadAction` notification.
-    /// - A stale/invisible triple answers like any unknown command.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn quad_plugin_action(&mut self, cmd: &str) -> Task<Message> {
-        use ocs_plugin_api::dialog::QuadActionDef;
-
-        let unknown = |app: &mut Self| {
-            app.command_line
-                .push_error(crate::tf!("Unknown command: {cmd}").as_ref());
-            Task::none()
-        };
-        let Some((plugin_id, panel_id, control_id)) = crate::plugin::quad::split_action(cmd) else {
-            return unknown(self);
-        };
-        let resolved = crate::plugin::quad::with_store(|store| {
-            store
-                .resolve(&plugin_id, &panel_id, &control_id)
-                .cloned()
-        });
-        match resolved {
-            Some(QuadActionDef::Command(verb)) => self.update(Message::Command(verb)),
-            Some(QuadActionDef::Callback) => {
-                // Visibility is the enabled+alive predicate the quad build
-                // applies (`panels_for_visible`): a pick that raced a plugin
-                // teardown delivers nothing but the honest error.
-                let visible =
-                    crate::plugin::grip_points::visibility(&self.disabled_plugins)(&plugin_id);
-                if !visible {
-                    return unknown(self);
-                }
-                let i = self.active_tab;
-                let handles = self.tabs[i].scene.selected_handles_in_order();
-                let type_keys: Vec<String> = handles
-                    .iter()
-                    .filter_map(|handle| {
-                        self.tabs[i]
-                            .scene
-                            .document
-                            .get_entity(*handle)
-                            .map(|entity| {
-                                crate::entities::traits::entity_type_name(entity).to_string()
-                            })
-                    })
-                    .collect();
-                // `pick_point` is context-only: the quad's hover anchor is a
-                // screen position, not a world point, and no world
-                // reconstruction is trivially available on this path — the
-                // host-supplied zero is the honest placeholder (§4).
-                crate::plugin::v4_support::publish_quad_action(
-                    &plugin_id,
-                    &panel_id,
-                    &control_id,
-                    handles,
-                    type_keys,
-                    [0.0; 3],
-                );
-                Task::none()
-            }
-            None => unknown(self),
-        }
-    }
-
-    /// The wasm twin: no plugin surface exists, so no `quadplugin:` item can
-    /// be built — a stray one answers like any unknown command.
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn quad_plugin_action(&mut self, cmd: &str) -> Task<Message> {
-        self.command_line
-            .push_error(crate::tf!("Unknown command: {cmd}").as_ref());
-        Task::none()
-    }
-
     /// Dispatch `cmd`, or `None` when no command answers to it (nothing is
     /// reported then). A script line uses it to tell a command that took
     /// the words after it from one that did not.
@@ -342,7 +259,9 @@ impl OpenCADStudio {
         }
         let construction = cmd.trim_start_matches(['_', '.']);
         if construction == "BCONSTRUCTION" || construction.starts_with("BCONSTRUCTION ") {
-            return Some(self.start_block_construction(construction.strip_prefix("BCONSTRUCTION").unwrap().trim()));
+            return Some(self.start_block_construction(
+                construction.strip_prefix("BCONSTRUCTION").unwrap().trim(),
+            ));
         }
         if cmd.trim_start_matches(['_', '.']) == "BCYCLEORDER" {
             return Some(self.open_block_cycle_order());
@@ -355,9 +274,8 @@ impl OpenCADStudio {
         if self.block_editor_preferences.locked
             && matches!(verb, "BEDIT" | "BEDIT_BEGIN" | "BEDIT_OPEN" | "BEDIT_NEW")
         {
-            self.command_line.push_error(
-                crate::t!("The Block Editor is locked by BLOCKEDITLOCK.").as_ref(),
-            );
+            self.command_line
+                .push_error(crate::t!("The Block Editor is locked by BLOCKEDITLOCK.").as_ref());
             return Some(Task::none());
         }
         if cmd == "BACTIONSET" {
@@ -367,20 +285,25 @@ impl OpenCADStudio {
             }
         }
         if cmd == "BASSOCIATE" {
-            if let Some(error)=self.action_association_error() {
+            if let Some(error) = self.action_association_error() {
                 self.command_line.push_error(crate::t!(error).as_ref());
                 return Some(Task::none());
             }
         }
         if cmd == "BACTIONBAR" || cmd.starts_with("BACTIONBAR ") {
-            if let Some(error)=self.action_bar_error() {
+            if let Some(error) = self.action_bar_error() {
                 self.command_line.push_error(crate::t!(error).as_ref());
                 return Some(Task::none());
             }
         }
-        if self.block_editor_preferences.action_bars && self.tabs[i].active_block_edit_session().is_some()
-            && matches!(verb,"BACTIONSET"|"BASSOCIATE"|"BLOOKUPTABLE") {
-            self.command_line.push_error(crate::t!("Use the action bar to edit this action, or set BACTIONBARMODE to 0.").as_ref());
+        if self.block_editor_preferences.action_bars
+            && self.tabs[i].active_block_edit_session().is_some()
+            && matches!(verb, "BACTIONSET" | "BASSOCIATE" | "BLOOKUPTABLE")
+        {
+            self.command_line.push_error(
+                crate::t!("Use the action bar to edit this action, or set BACTIONBARMODE to 0.")
+                    .as_ref(),
+            );
             return Some(Task::none());
         }
         if matches!(
@@ -407,7 +330,9 @@ impl OpenCADStudio {
                     );
                     return Some(Task::none());
                 }
-                if let Some(error) = self.action_error(crate::scene::block_actions::Kind::parse(args)) {
+                if let Some(error) =
+                    self.action_error(crate::scene::block_actions::Kind::parse(args))
+                {
                     self.command_line.push_error(crate::t!(error).as_ref());
                     return Some(Task::none());
                 }
@@ -608,61 +533,6 @@ impl OpenCADStudio {
         self.ribbon
             .show_command(strip_command_prefixes(cmd).unwrap_or(cmd));
 
-        if !self.suppress_plugin_dispatch && crate::plugin::try_dispatch(self, i, cmd) {
-            // try_dispatch returns true for both finished commands and interactive
-            // commands that it just installed. If no command is now active, the
-            // tool was a one-shot and we must turn the ribbon highlight off here —
-            // normally apply_cmd_result does that, but plugin dispatch can return
-            // without producing a CmdResult.
-            self.tabs[i].last_cmd = Some(cmd.to_string());
-            self.command_line.record_recent(cmd);
-            if self.tabs[i].active_cmd.is_none() {
-                self.ribbon.deactivate_tool();
-            }
-            return Some(self.finish_dispatch(cmd));
-        }
-
-        // Direct plugin panel toggle command matching
-        let cmd_upper = cmd.trim().to_uppercase();
-        let stripped_cmd = cmd_upper.replace([' ', '_', '-'], "");
-        let panel_match = self.plugin_panels.iter().find_map(|(id, state)| {
-            let matches_cmd = state.def.command.as_deref().map(|c| {
-                let cu = c.to_uppercase();
-                cu == cmd_upper || cu.replace([' ', '_', '-'], "") == stripped_cmd
-            }).unwrap_or(false);
-            let matches_id = {
-                let id_u = id.to_uppercase();
-                id_u == cmd_upper || id_u.replace([' ', '_', '-'], "") == stripped_cmd
-            };
-            let matches_title = {
-                let tu = state.def.title.to_uppercase();
-                tu == cmd_upper || tu.replace([' ', '_', '-'], "") == stripped_cmd
-            };
-            if matches_cmd || matches_id || matches_title {
-                Some((id.clone(), state.def.title.clone()))
-            } else {
-                None
-            }
-        });
-        if let Some((panel_id, title)) = panel_match {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                use ocs_plugin_api::host::HostApi;
-                let mut host = crate::app::plugin_host::HostSession::new(self, i);
-                let toggled = host.toggle_panel(&panel_id, None);
-                if toggled {
-                    self.command_line.push_info(&format!("{title} palette toggled."));
-                    self.tabs[i].last_cmd = Some(cmd.to_string());
-                    self.command_line.record_recent(cmd);
-                    return Some(self.finish_dispatch(cmd));
-                }
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let _ = (panel_id, title);
-            }
-        }
-
         // Command families are dispatched in source order (see
         // `dispatch_families`); the first whose `match` arm matches handles it.
         if let Some(t) = self.dispatch_families(cmd, i) {
@@ -747,16 +617,13 @@ impl OpenCADStudio {
         if let Some(t) = self.dispatch_fileops(cmd, i) {
             return Some(t);
         }
+        if let Some(t) = self.dispatch_picture_import(cmd, i) {
+            return Some(t);
+        }
         if let Some(t) = self.dispatch_layers(cmd, i) {
             return Some(t);
         }
         if let Some(t) = self.dispatch_xref_attach(cmd, i) {
-            return Some(t);
-        }
-        if let Some(t) = self.dispatch_import(cmd, i) {
-            return Some(t);
-        }
-        if let Some(t) = self.dispatch_model_import(cmd, i) {
             return Some(t);
         }
         if let Some(t) = self.dispatch_bvisibility(cmd, i) {
@@ -935,13 +802,7 @@ pub fn start_allowed(cmd: &str) -> bool {
             | "OPEN"
             | "EXIT"
             | "QUIT"
-            | "REPORT"
-            | "CHANGELOG"
             | "ABOUT"
-            | "PLUGINS"
-            | "PLUGINMANAGER"
-            | "DONATE"
-            | "WEBVERSION"
             | "HELP"
             | "PERF"
             | "CUI"
@@ -1380,14 +1241,12 @@ inventory::submit!(crate::command::CommandRegistration {
         "3DORBIT",
         "3O",
         "ABOUT",
-        "CHECKFORUPDATES",
         "ATTACH",
         "ATTDISP",
         "ATTEXT",
         "BACKGROUND",
         "CDIMSTY",
         "CELTSCALE",
-        "CHANGELOG",
         "CHPROP",
         "CLAYER",
         "CLEAR",
@@ -1403,7 +1262,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "SELECTPREVIOUS",
         "PSELECT",
         "DIMSTYLE",
-        "DONATE",
         "DRAWORDER",
         "DRAWORDER_FRONT",
         "DRAWORDER_BACK",
@@ -1414,8 +1272,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "EATTEXT",
         "EXIT",
         "EXPORT",
-        "EXPORTSTEP",
-        "EXPORTSTL",
         "EXTERNALREFERENCES",
         "EXTERNALREFERENCESCLOSE",
         "ERSTATE",
@@ -1432,7 +1288,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "IMAGEATTACH",
         "TRANSPARENCY",
         "IMAGEEMBED",
-        "IMPORTOBJ",
         "ISOLATEOBJECTS",
         "LA",
         "LAYER",
@@ -1459,13 +1314,7 @@ inventory::submit!(crate::command::CommandRegistration {
         "NAVVCUBE",
         "NEW",
         "QNEW",
-        "OBJIMPORT",
-        "IMPORT",
-        "ACISIN",
-        "WMFIN",
         "SVGIN",
-        "DGNIMPORT",
-        "-DGNIMPORT",
         "OPEN",
         "ORTHO",
         "P",
@@ -1492,7 +1341,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "QUIT",
         "REDO",
         "RENAME",
-        "REPORT",
         "SA",
         "SAVE",
         "SAVEAS",
@@ -1524,10 +1372,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "SSFOUND",
         "SHORTCUTS",
         "SSM",
-        "STEPOUT",
-        "FBXEXPORT",
-        "STLOUT",
-        "STPOUT",
         "STYLE",
         "STYLESMANAGER",
         "TABLESTYLE",
@@ -1553,7 +1397,6 @@ inventory::submit!(crate::command::CommandRegistration {
         "VS",
         "WB",
         "WBLOCK",
-        "WEBVERSION",
         "XA",
         "XATTACH",
         "XDATA",
@@ -1733,217 +1576,6 @@ mod marquee_cancel_tests {
         );
     }
 
-    #[test]
-    fn plugin_panel_toggle_by_command_and_title() {
-        use ocs_plugin_api::dialog::PanelDef;
-        use ocs_plugin_api::host::HostApi;
-
-        let mut app = fresh();
-        let i = app.active_tab;
-
-        // Register a panel
-        let panel_def = PanelDef::new("sample_palette", "Sample Palette")
-            .with_width(360.0)
-            .with_command("SAMPLEPALETTE");
-
-        {
-            let mut host = crate::app::plugin_host::HostSession::new(&mut app, i);
-            assert!(host.register_panel(panel_def));
-        }
-
-        // Initially panel is registered and not visible
-        assert!(!app.plugin_panels.get("sample_palette").unwrap().visible);
-        assert!(app.command_line.dynamic_commands.contains(&"SAMPLEPALETTE".to_string()));
-
-        // Dispatch SAMPLEPALETTE command to toggle on
-        let _ = app.dispatch_command("SAMPLEPALETTE");
-        assert!(app.plugin_panels.get("sample_palette").unwrap().visible);
-
-        // Dispatch SAMPLEPALETTE command to toggle off
-        let _ = app.dispatch_command("SAMPLEPALETTE");
-        assert!(!app.plugin_panels.get("sample_palette").unwrap().visible);
-
-        // Dispatch with spaces or lowercase "sample palette"
-        let _ = app.dispatch_command("sample palette");
-        assert!(app.plugin_panels.get("sample_palette").unwrap().visible);
-
-        let _ = app.dispatch_command("samplepalette");
-        assert!(!app.plugin_panels.get("sample_palette").unwrap().visible);
-    }
-
-    #[test]
-    fn plugin_show_dialog_opens_modal() {
-        use ocs_plugin_api::dialog::{DialogControl, DialogDef, DialogResponse, DialogRow};
-        use ocs_plugin_api::host::HostApi;
-
-        let mut app = fresh();
-        let i = app.active_tab;
-
-        let dialog = DialogDef::new("Test Modal").with_row(DialogRow::single(DialogControl::Text {
-            id: "name".to_string(),
-            label: "Name".to_string(),
-            default: "DefaultVal".to_string(),
-        }));
-
-        {
-            let mut host = crate::app::plugin_host::HostSession::new(&mut app, i);
-            let resp = host.show_dialog(dialog);
-            assert!(matches!(resp, DialogResponse::Cancelled));
-        }
-
-        assert!(app.plugin_dialog_state.is_some());
-        assert_eq!(
-            app.active_modal,
-            Some(crate::app::ModalKind::PluginDialog)
-        );
-        assert_eq!(
-            app.plugin_dialog_state.as_ref().unwrap().title(),
-            "Test Modal"
-        );
-    }
-
-    #[test]
-    fn plugin_quad_pick_delivers_to_owner_and_unknown_panel_errors() {
-        use ocs_plugin_api::dialog::{QuadActionDef, QuadItemDef, QuadPanelDef};
-        use ocs_plugin_api::host::CustomGripResponse;
-        use ocs_plugin_api::ribbon::owned::OwnedIconKind;
-
-        let mut app = fresh();
-        let i = app.active_tab;
-        // Test liveness: the in-process sink marks the plugin loaded+alive in
-        // the grips' visibility predicate (thread-local, so no cross-test
-        // bleed), and the global quad store keys the registration by plugin.
-        crate::plugin::grip_points::install_in_process_sink("quadtest.plugin", |_, _| {
-            CustomGripResponse::default()
-        });
-        let plugin_id = "quadtest.plugin";
-        let callback_panel = QuadPanelDef::new("align", "Align").with_item(QuadItemDef {
-            control_id: "flip".to_string(),
-            label: "Flip".to_string(),
-            icon: OwnedIconKind::Glyph("F".to_string()),
-            action: QuadActionDef::Callback,
-        });
-        let command_panel = QuadPanelDef::new("cmds", "Commands").with_item(QuadItemDef {
-            control_id: "line".to_string(),
-            label: "Line".to_string(),
-            icon: OwnedIconKind::Glyph("L".to_string()),
-            action: QuadActionDef::Command("LINE".to_string()),
-        });
-
-        // Register through the host session (the wire path's storage).
-        {
-            let mut host = crate::app::plugin_host::HostSession::new(&mut app, i);
-            assert_eq!(
-                host.register_quad_panels(plugin_id, &[callback_panel, command_panel]),
-                vec![true, true]
-            );
-        }
-
-        // The model feed: namespaced id, the title as tab label, and the
-        // `quadplugin:` command on the item.
-        let feed = crate::app::plugin_host::plugin_quad_panels(&app.disabled_plugins);
-        let registered = feed
-            .iter()
-            .find(|panel| panel.id == "plugin:quadtest.plugin:align")
-            .expect("registered quad panel joins the model feed");
-        assert_eq!(registered.label, "Align");
-        assert_eq!(
-            registered.items[0].command,
-            "quadplugin:quadtest.plugin:align:flip"
-        );
-
-        // The pick dispatch: a Callback item is delivered to the owner as a
-        // quad action notification and never started as a command.
-        let _ = app.quad_plugin_action("quadplugin:quadtest.plugin:align:flip");
-        let log = crate::plugin::v4_support::take_test_dispatch_log();
-        assert_eq!(
-            log.iter()
-                .filter(|entry| entry.starts_with("QuadAction"))
-                .count(),
-            1,
-            "exactly one owner-targeted quad action: {log:?}"
-        );
-        assert!(log
-            .iter()
-            .any(|entry| entry == "QuadAction(align.flip, 0 handles)"));
-        assert!(app.tabs[i].active_cmd.is_none());
-
-        // The dead-tile fix: a Command item's verb dispatches host-side,
-        // exactly like a plain quad item.
-        let _ = app.quad_plugin_action("quadplugin:quadtest.plugin:cmds:line");
-        assert_eq!(
-            app.tabs[i].active_cmd.as_deref().map(|cmd| cmd.name()),
-            Some("LINE")
-        );
-        let _ = app.update(crate::app::Message::CommandEscape);
-        assert!(app.tabs[i].active_cmd.is_none());
-
-        // The scheme is the pick path's own: the generic dispatcher treats
-        // even a REGISTERED triple as an unknown command (no notification),
-        // so command line / automation / script can never reach the surface.
-        let _ = app.dispatch_command("quadplugin:quadtest.plugin:align:flip");
-        let log = crate::plugin::v4_support::take_test_dispatch_log();
-        assert!(
-            log.iter().all(|entry| !entry.starts_with("QuadAction")),
-            "the dispatcher must not deliver quad actions: {log:?}"
-        );
-        assert!(
-            app.command_line
-                .last_error
-                .as_deref()
-                .is_some_and(|error| error.contains("Unknown command")),
-            "a dispatcher quadplugin: line must answer the unknown-command error"
-        );
-
-        // An unknown panel answers the same way on both doors.
-        let _ = app.dispatch_command("quadplugin:quadtest.plugin:nope:flip");
-        let log = crate::plugin::v4_support::take_test_dispatch_log();
-        assert!(
-            log.iter().all(|entry| !entry.starts_with("QuadAction")),
-            "an unknown panel must deliver nothing: {log:?}"
-        );
-        assert!(
-            app.command_line
-                .last_error
-                .as_deref()
-                .is_some_and(|error| error.contains("Unknown command")),
-            "unknown panel must answer the unknown-command error"
-        );
-
-        // The raw dispatch probe: None, no notification, no error.
-        assert!(app.try_dispatch_command("quadplugin:a:b:c", false).is_none());
-        assert!(crate::plugin::v4_support::take_test_dispatch_log().is_empty());
-
-        // A pick whose owner turned invisible (died/disabled since the quad
-        // was built) delivers nothing but the honest error.
-        crate::plugin::grip_points::remove_in_process_sink(plugin_id);
-        let _ = app.quad_plugin_action("quadplugin:quadtest.plugin:align:flip");
-        let log = crate::plugin::v4_support::take_test_dispatch_log();
-        assert!(
-            log.iter().all(|entry| !entry.starts_with("QuadAction")),
-            "an invisible owner must deliver nothing: {log:?}"
-        );
-        assert!(
-            app.command_line
-                .last_error
-                .as_deref()
-                .is_some_and(|error| error.contains("Unknown command")),
-            "an invisible owner's pick must answer the unknown-command error"
-        );
-
-        // Teardown parity: unregister removes only the owner's ids.
-        {
-            let mut host = crate::app::plugin_host::HostSession::new(&mut app, i);
-            assert_eq!(
-                host.unregister_quad_panels(plugin_id, &["align", "nope"]),
-                vec![true, false]
-            );
-        }
-        let feed = crate::app::plugin_host::plugin_quad_panels(&app.disabled_plugins);
-        assert!(feed
-            .iter()
-            .all(|panel| panel.id != "plugin:quadtest.plugin:align"));
-    }
 }
 
 /// `cmd` without its leading `_` / `.` name prefixes (`_LINE`, `.LINE`,
@@ -2026,16 +1658,26 @@ mod stretch_preselection_tests {
         assert_eq!(cmd_prompt, "STRETCH  Specify base point:");
 
         // Pick base point
-        let res = app.tabs[i].active_cmd.as_mut().unwrap().on_point(DVec3::new(10.0, 0.0, 0.0));
+        let res = app.tabs[i]
+            .active_cmd
+            .as_mut()
+            .unwrap()
+            .on_point(DVec3::new(10.0, 0.0, 0.0));
         let _ = app.apply_cmd_result(res);
 
         // Pick destination point
-        let res = app.tabs[i].active_cmd.as_mut().unwrap().on_point(DVec3::new(15.0, 0.0, 0.0));
+        let res = app.tabs[i]
+            .active_cmd
+            .as_mut()
+            .unwrap()
+            .on_point(DVec3::new(15.0, 0.0, 0.0));
         let _ = app.apply_cmd_result(res);
 
         // Check line: start (0,0,0) didn't move; end (10,0,0) moved to (15,0,0)
         let ent = app.tabs[i].scene.document.get_entity(handle).unwrap();
-        let document::EntityType::Line(l) = ent else { panic!("expected line"); };
+        let document::EntityType::Line(l) = ent else {
+            panic!("expected line");
+        };
         assert_eq!(l.start, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(l.end, Vector3::new(15.0, 0.0, 0.0));
     }
@@ -2059,16 +1701,26 @@ mod stretch_preselection_tests {
         assert_eq!(cmd_prompt, "STRETCH  Specify base point:");
 
         // Pick base point
-        let res = app.tabs[i].active_cmd.as_mut().unwrap().on_point(DVec3::new(0.0, 0.0, 0.0));
+        let res = app.tabs[i]
+            .active_cmd
+            .as_mut()
+            .unwrap()
+            .on_point(DVec3::new(0.0, 0.0, 0.0));
         let _ = app.apply_cmd_result(res);
 
         // Pick destination point
-        let res = app.tabs[i].active_cmd.as_mut().unwrap().on_point(DVec3::new(5.0, 3.0, 0.0));
+        let res = app.tabs[i]
+            .active_cmd
+            .as_mut()
+            .unwrap()
+            .on_point(DVec3::new(5.0, 3.0, 0.0));
         let _ = app.apply_cmd_result(res);
 
         // Check line: start moved to (5,3,0); end moved to (15,3,0)
         let ent = app.tabs[i].scene.document.get_entity(handle).unwrap();
-        let document::EntityType::Line(l) = ent else { panic!("expected line"); };
+        let document::EntityType::Line(l) = ent else {
+            panic!("expected line");
+        };
         assert_eq!(l.start, Vector3::new(5.0, 3.0, 0.0));
         assert_eq!(l.end, Vector3::new(15.0, 3.0, 0.0));
     }
@@ -2081,6 +1733,9 @@ mod stretch_preselection_tests {
         let _ = app.dispatch_command("STRETCH");
         assert!(app.tabs[i].active_cmd.is_some());
         let cmd_prompt = app.tabs[i].active_cmd.as_ref().unwrap().prompt();
-        assert_eq!(cmd_prompt, "STRETCH  Specify first corner of crossing window:");
+        assert_eq!(
+            cmd_prompt,
+            "STRETCH  Specify first corner of crossing window:"
+        );
     }
 }

@@ -237,6 +237,11 @@ impl Scene {
     }
 
     #[cfg(any(test, not(target_arch = "wasm32")))]
+    pub(crate) fn selection_fingerprint_pending(&self) -> bool {
+        self.selection_fingerprint_dirty
+    }
+
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     pub(crate) fn selection_fingerprint(&mut self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};

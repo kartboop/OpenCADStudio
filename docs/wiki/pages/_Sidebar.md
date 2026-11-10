@@ -36,13 +36,10 @@
 - [Plotting and Publishing](Plotting-and-Publishing)
 - [Files and Formats](Files-and-Formats)
 
-**3D**
-- [3D Modelling](3D-Modelling)
-
 **Tools**
 - [Measuring and Inquiry](Measuring-and-Inquiry)
 - [Customization](Customization)
-- [Automation and Plugins](Automation-and-Plugins)
+- [Command Scripts](Command-Scripts)
 
 **Reference**
 - [Command Reference](Command-Reference)

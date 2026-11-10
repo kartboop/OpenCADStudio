@@ -41,7 +41,7 @@ Give a distance, pick the object, then click the side. **Through** places the co
 | <img src="images/icons/chamfer.svg" width="24" alt=""> | Chamfer | `CHAMFER` (`CHA`) | Bevels the corner with a straight edge, given by two distances or a distance and an angle. |
 | | Blend | `BLEND` (`BLE`) | Joins the ends of two curves with a smooth spline. |
 
-Both work on lines, arcs, circles, polylines, construction lines and rays. **Polyline** treats every corner of a polyline at once. For solid edges, see [3D Modelling](3D-Modelling#edges).
+Both work on lines, arcs, circles, polylines, construction lines and rays. **Polyline** treats every corner of a polyline at once.
 
 ## Arrays
 

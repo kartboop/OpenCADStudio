@@ -54,7 +54,6 @@
 //! - `property_match.rs` — MATCHPROP/LAYMATCH arms (special-prop kernels live
 //!   in `crate::entities::match_props`).
 //! - `entity_commit.rs` — entity/dimension/hatch/block commit arms.
-//! - `solid3d.rs` — extrude/thicken/presspull/revolve/sweep/loft/shell/boolean/slice.
 //! - `viewport.rs` — MVIEW/layout/plot/zoom/print arms.
 //! - `transform.rs` — MOVE/COPY/ALIGN/STRETCH arms.
 //! - `clipboard.rs` — COPYCLIP/PASTECLIP/PASTEORIG/PASTEBLOCK arms,
@@ -80,19 +79,18 @@ use crate::command::{CmdResult, SelectionEntity, StepInput};
 use document::Handle;
 use iced::Task;
 
+mod autolisp_tests;
 pub(super) mod clipboard;
 mod constraint;
 mod dim_edit;
 mod entity_commit;
 mod modify;
-mod parameters;
-mod property_match;
-mod solid3d;
-mod tests;
-mod autolisp_tests;
-mod text_edit;
 #[cfg(test)]
 mod mtext_preview_tests;
+mod parameters;
+mod property_match;
+mod tests;
+mod text_edit;
 mod transform;
 mod utilities;
 mod viewport;
@@ -121,16 +119,6 @@ impl OpenCADStudio {
         let outermost = self.result_depth == 0;
         if outermost {
             self.tabs[i].scene.constraint_network_moves.clear();
-        }
-        let panel_updates = self.tabs[i]
-            .active_cmd
-            .as_mut()
-            .map(|c| c.take_pending_panel_updates())
-            .unwrap_or_default();
-        for (panel_id, values) in panel_updates {
-            if let Some(panel) = self.plugin_panels.get_mut(&panel_id) {
-                panel.update_values(values);
-            }
         }
         if let CmdResult::ReturnPoint(pt) = result {
             self.tabs[i].scene.clear_preview_wire();
@@ -206,7 +194,9 @@ impl OpenCADStudio {
         }
         if let Some((name, value)) = variable {
             let tab = &mut self.tabs[self.active_tab];
-            if crate::io::drawing_variable(&tab.scene.document, name).as_deref() != Some(value.as_str()) {
+            if crate::io::drawing_variable(&tab.scene.document, name).as_deref()
+                != Some(value.as_str())
+            {
                 crate::io::set_drawing_variable(&mut tab.scene.document, name, &value);
                 tab.dirty = true;
             }
@@ -239,10 +229,6 @@ impl OpenCADStudio {
                 | CmdResult::Script(..)
                 | CmdResult::QSelectSample { .. }
                 | CmdResult::FilterSample { .. }
-                | CmdResult::SolidEdgeBlend { .. }
-                | CmdResult::SolidSubtract { .. }
-                | CmdResult::SliceEntities { .. }
-                | CmdResult::SliceSurfaceEntities { .. }
                 // An array arrow keeps the array selected for the next arrow.
                 | CmdResult::EditAssocArray { .. }
         );
@@ -274,7 +260,11 @@ impl OpenCADStudio {
             .as_ref()
             .map(|command| command.preview_hidden_handles().to_vec())
             .unwrap_or_default();
-        if let Some(cell) = self.table_cell_editor.as_ref().filter(|c| c.tab_id == self.tabs[i].id) {
+        if let Some(cell) = self
+            .table_cell_editor
+            .as_ref()
+            .filter(|c| c.tab_id == self.tabs[i].id)
+        {
             preview_hidden.push(cell.handle);
         }
         self.tabs[i]
@@ -737,9 +727,6 @@ impl OpenCADStudio {
             } => {
                 self.handle_collect_mleaders(handles, point, layout);
             }
-            result @ CmdResult::CommitSolid { .. } => {
-                self.handle_commit_solid(result);
-            }
             CmdResult::CommitAndEditText(entity) => {
                 if let Some(task) = self.handle_commit_and_edit_text(entity) {
                     return task;
@@ -774,10 +761,17 @@ impl OpenCADStudio {
             result @ CmdResult::EditBlockAuthoring { .. } => {
                 return self.handle_authoring_edit(result);
             }
-            CmdResult::SetBlockActionBars { document,definition,mode,parameters } => {
-                return self.set_action_bars(document,definition,mode,parameters);
+            CmdResult::SetBlockActionBars {
+                document,
+                definition,
+                mode,
+                parameters,
+            } => {
+                return self.set_action_bars(document, definition, mode, parameters);
             }
-            result @ CmdResult::AlignBlockReference { .. } => { return self.handle_block_alignment(result); }
+            result @ CmdResult::AlignBlockReference { .. } => {
+                return self.handle_block_alignment(result);
+            }
             result @ (CmdResult::PlaceBlockAction { .. }
             | CmdResult::EditBlockActionSet { .. }
             | CmdResult::AssociateBlockAction { .. }
@@ -787,7 +781,10 @@ impl OpenCADStudio {
             result @ CmdResult::PlaceBlockSingleParameter { .. } => {
                 return self.handle_place_block_single_parameter(result);
             }
-            CmdResult::StartBlockLookupAction { document, definition } => {
+            CmdResult::StartBlockLookupAction {
+                document,
+                definition,
+            } => {
                 return self.start_block_lookup_action(document, definition);
             }
             CmdResult::OpenBlockLookupTable {
@@ -889,12 +886,6 @@ impl OpenCADStudio {
                 remembered,
                 attach,
             } => return self.handle_pdf_password(path, input, stage, remembered, attach),
-            CmdResult::DgnImport(request) => {
-                self.tabs[i].scene.clear_preview_wire();
-                self.tabs[i].active_cmd = None;
-                self.tabs[i].snap_result = None;
-                return self.run_dgn_import(i, request);
-            }
             CmdResult::PdfImportFile(import) => {
                 self.tabs[i].scene.clear_preview_wire();
                 self.tabs[i].active_cmd = None;
@@ -1310,76 +1301,6 @@ impl OpenCADStudio {
                     return task;
                 }
             }
-            // ── EXTRUDE ────────────────────────────────────────────────────
-            result @ CmdResult::ExtrudeEntities { .. } => {
-                if let Some(task) = self.handle_extrude_entities(result) {
-                    return task;
-                }
-            }
-
-            CmdResult::ThickenEntities { handles, distance } => {
-                if let Some(task) = self.handle_thicken_entities(handles, distance) {
-                    return task;
-                }
-            }
-
-            result @ CmdResult::PresspullPick { .. } => {
-                self.handle_presspull_pick(result);
-            }
-            CmdResult::PresspullApply {
-                targets,
-                distance,
-                color: _,
-            } => {
-                self.handle_presspull_apply(targets, distance);
-            }
-
-            // ── REVOLVE ────────────────────────────────────────────────────
-            result @ CmdResult::RevolveEntities { .. } => {
-                if let Some(task) = self.handle_revolve_entities(result) {
-                    return task;
-                }
-            }
-            // ── SWEEP ─────────────────────────────────────────────────────
-            result @ CmdResult::SweepEntities { .. } => {
-                self.handle_sweep_entities(result);
-            }
-
-            // ── LOFT ──────────────────────────────────────────────────────
-            result @ CmdResult::LoftEntities { .. } => {
-                if let Some(task) = self.handle_loft_entities(result) {
-                    return task;
-                }
-            }
-
-            result @ CmdResult::SolidEdgeBlend { .. } => {
-                return self.handle_solid_edge_blend(result)
-            }
-
-            CmdResult::SolidShell {
-                handle,
-                actions,
-                distance,
-            } => return self.handle_solid_shell(handle, actions, distance),
-
-            CmdResult::SolidSubtract {
-                bases,
-                cutters,
-                convert_meshes,
-            } => return self.handle_solid_subtract(bases, cutters, convert_meshes),
-
-            CmdResult::SliceEntities {
-                targets,
-                plane,
-                keep_point,
-            } => return self.handle_slice_entities(targets, plane, keep_point),
-
-            CmdResult::SliceSurfaceEntities {
-                targets,
-                cutter,
-                keep_point,
-            } => return self.handle_slice_surface_entities(targets, cutter, keep_point),
-
             result @ CmdResult::HatcheditApply { .. } => {
                 if let Some(task) = self.handle_hatchedit_apply(result) {
                     return task;
@@ -1634,10 +1555,9 @@ impl OpenCADStudio {
             .viewport_edit_frame(canvas)
             .map(|(cam, _)| cam);
         let (view_rot, eye, _) = self.pick_view(i, &edit_cam, bounds);
-        crate::scene::view::projection::project_screen(view_rot, eye, bounds, wcs)
-            .is_some_and(|p| {
-                (0.0..=bounds.width).contains(&p.x) && (0.0..=bounds.height).contains(&p.y)
-            })
+        crate::scene::view::projection::project_screen(view_rot, eye, bounds, wcs).is_some_and(
+            |p| (0.0..=bounds.width).contains(&p.x) && (0.0..=bounds.height).contains(&p.y),
+        )
     }
 
     /// A window between two typed corners, run through the same box test
@@ -1785,8 +1705,10 @@ impl OpenCADStudio {
         for h in &handles {
             self.tabs[i].scene.select_entity(*h, false);
         }
-        self.tabs[i].scene.sub_segments =
-            segments.into_iter().filter(|(handle, _)| handles.contains(handle)).collect();
+        self.tabs[i].scene.sub_segments = segments
+            .into_iter()
+            .filter(|(handle, _)| handles.contains(handle))
+            .collect();
         self.tabs[i].active_cmd = None;
         self.tabs[i].snap_result = None;
         self.tabs[i].scene.clear_preview_wire();
@@ -1831,9 +1753,8 @@ impl OpenCADStudio {
                 .map(document::Handle::new)
                 .collect();
             if let (Some(new), false) = (new, others.is_empty() || choice == 'N') {
-                let dimdli = crate::scene::creation_style::drawing_dimdli(
-                    &self.tabs[i].scene.document,
-                );
+                let dimdli =
+                    crate::scene::creation_style::drawing_dimdli(&self.tabs[i].scene.document);
                 self.push_undo_snapshot(i, "DIM");
                 dim_edit::apply_dim_overlap(&mut self.tabs[i].scene, choice, new, &others, dimdli);
                 self.tabs[i].dirty = true;
@@ -2089,12 +2010,20 @@ impl OpenCADStudio {
             TableCellEditStart::LockedCell => {
                 self.command_line
                     .push_error(crate::t!("The cell is content locked.").as_ref());
-                let _ = self.dispatch_command(if command_line { "-TABLEDIT" } else { "TABLEDIT" });
+                let _ = self.dispatch_command(if command_line {
+                    "-TABLEDIT"
+                } else {
+                    "TABLEDIT"
+                });
             }
             TableCellEditStart::NoCell => {
                 self.command_line
                     .push_error(crate::t!("No editable table cell picked.").as_ref());
-                let _ = self.dispatch_command(if command_line { "-TABLEDIT" } else { "TABLEDIT" });
+                let _ = self.dispatch_command(if command_line {
+                    "-TABLEDIT"
+                } else {
+                    "TABLEDIT"
+                });
             }
         }
         None
@@ -2344,7 +2273,11 @@ fn mleader_extent_along(ml: &document::entities::MultiLeader, dir: glam::DVec2) 
     let height = match ml.content_type {
         document::entities::LeaderContentType::MText => {
             let lines = ctx.text_string.split("\\P").count().max(1) as f64;
-            let h = if ctx.text_height > 0.0 { ctx.text_height } else { ml.text_height };
+            let h = if ctx.text_height > 0.0 {
+                ctx.text_height
+            } else {
+                ml.text_height
+            };
             h * (1.0 + (lines - 1.0) * 5.0 / 3.0 * ctx.line_spacing_factor.max(0.0))
         }
         _ => ctx.block_content_scale.y.abs().max(1.0e-9),
@@ -2353,7 +2286,11 @@ fn mleader_extent_along(ml: &document::entities::MultiLeader, dir: glam::DVec2) 
     let td = &ctx.text_direction;
     let (ux, uy) = {
         let l = (td.x * td.x + td.y * td.y).sqrt();
-        if l > 1.0e-9 { (td.x / l, td.y / l) } else { (1.0, 0.0) }
+        if l > 1.0e-9 {
+            (td.x / l, td.y / l)
+        } else {
+            (1.0, 0.0)
+        }
     };
     width * (dir.x * ux + dir.y * uy).abs() + height * (-dir.x * uy + dir.y * ux).abs()
 }
@@ -2364,10 +2301,11 @@ fn apply_mleader_align(
     request: &MLeaderAlign,
 ) -> bool {
     use crate::modules::annotate::mleader_edit::MLeaderAlignMode as Mode;
-    let leader = |scene: &crate::scene::Scene, h: document::Handle| match scene.document.get_entity(h) {
-        Some(document::EntityType::MultiLeader(ml)) => Some((**ml).clone()),
-        _ => None,
-    };
+    let leader =
+        |scene: &crate::scene::Scene, h: document::Handle| match scene.document.get_entity(h) {
+            Some(document::EntityType::MultiLeader(ml)) => Some((**ml).clone()),
+            _ => None,
+        };
     let mut moves: Vec<(document::Handle, glam::DVec2)> = Vec::new();
     match request.mode {
         Mode::Distribute => {
@@ -2434,7 +2372,12 @@ fn apply_mleader_align(
                 .filter_map(|&h| leader(scene, h).map(|ml| (h, ml)))
                 .map(|(h, ml)| {
                     let base = mleader_base(&ml);
-                    ((base - origin).dot(dir), h, base, mleader_extent_along(&ml, dir))
+                    (
+                        (base - origin).dot(dir),
+                        h,
+                        base,
+                        mleader_extent_along(&ml, dir),
+                    )
                 })
                 .collect();
             if request.mode == Mode::UseCurrent {

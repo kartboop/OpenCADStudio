@@ -51,13 +51,13 @@ A useful security report should include:
 * A clear description of the vulnerability
 * The affected OpenCADStudio version or commit
 * The affected operating system or browser
-* Whether the issue affects the native application, web application, file parser, exporter, plug-in system, or build process
+* Whether the issue affects the native application, web application, file parser, exporter, or build process
 * Step-by-step reproduction instructions
 * The expected and actual behavior
 * The security impact
 * Any required user interaction
 * A minimal proof of concept, when safe to provide
-* A sample DWG, DXF, STL, STEP, OBJ, PDF, plug-in, or configuration file when relevant
+* A sample DWG, DXF, DWT, PDF, SVG, image, script, or configuration file when relevant
 * Crash logs, stack traces, browser console output, or screenshots
 * Suggested mitigations or fixes, when available
 * Whether the vulnerability has been disclosed to anyone else

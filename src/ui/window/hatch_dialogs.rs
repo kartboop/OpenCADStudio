@@ -6,7 +6,6 @@ use iced::{Element, Fill};
 use crate::app::Message;
 use crate::ui::style::common::muted_style;
 use crate::ui::style::form::dialog_button;
-use crate::ui::window::import_dialogs::warning_badge;
 use crate::ui::window::pdf_dialogs::{chip, well_style};
 
 /// The warning an empty-area pick shows.
@@ -34,7 +33,12 @@ pub fn view_warning<'a>(
 ) -> Element<'a, Message> {
     let tr = |key: &str| crate::i18n::loader().get_attr("hatch-warning", key);
     let toggle = button(
-        text(if state.details { tr("hide-details") } else { tr("show-details") }).size(11),
+        text(if state.details {
+            tr("hide-details")
+        } else {
+            tr("show-details")
+        })
+        .size(11),
     )
     .on_press(msg(HatchDialogMsg::WarningDetails(!state.details)))
     .style(button::text)
@@ -68,7 +72,11 @@ pub fn view_warning<'a>(
         );
     }
     column![
-        row![warning_badge(), text_column.width(Fill)].spacing(12),
+        row![
+            crate::ui::icons::themed_warning(crate::ui::icons::WARNING, 32.0),
+            text_column.width(Fill)
+        ]
+        .spacing(12),
         iced::widget::rule::horizontal(1),
         row![
             chip(

@@ -581,9 +581,6 @@ impl OpenCADStudio {
                         self.refresh_xref_manager();
                     }
                     PanelId::Browser => self.show_browser = true,
-                    PanelId::NodeGraph => {
-                        task = self.on_graph(crate::ui::node_graph::GraphMsg::Toggle);
-                    }
                     PanelId::PointCloudManager => self.pc_manager.show = true,
                     PanelId::Count => self.set_count_palette(true),
                     PanelId::SheetSetManager => self.show_sheet_set_manager(true),
@@ -605,13 +602,6 @@ impl OpenCADStudio {
                         self.sync_command_history_panel();
                         self.dock_open_at_default(id);
                         self.save_config();
-                    }
-                    PanelId::Plugin(num) => {
-                        if let Some(panel_id) = self.plugin_panel_by_num.get(&num) {
-                            if let Some(panel) = self.plugin_panels.get_mut(panel_id) {
-                                panel.visible = true;
-                            }
-                        }
                     }
                 }
             }
@@ -666,7 +656,6 @@ impl OpenCADStudio {
             }
             PanelId::ExternalReferences => self.show_external_references = false,
             PanelId::Browser => self.show_browser = false,
-            PanelId::NodeGraph => self.show_node_graph = false,
             PanelId::PointCloudManager => self.pc_manager.show = false,
             PanelId::Count => {
                 self.count_palette.show = false;
@@ -700,13 +689,6 @@ impl OpenCADStudio {
                 self.ribbon.set_graphic_attributes(false);
                 self.graphic_attributes.close_popups();
                 self.save_config();
-            }
-            PanelId::Plugin(num) => {
-                if let Some(panel_id) = self.plugin_panel_by_num.get(&num) {
-                    if let Some(panel) = self.plugin_panels.get_mut(panel_id) {
-                        panel.visible = false;
-                    }
-                }
             }
         }
         self.dock_unpeek(id);
@@ -814,7 +796,6 @@ impl OpenCADStudio {
             }
             PanelId::ExternalReferences => self.show_external_references,
             PanelId::Browser => self.show_browser,
-            PanelId::NodeGraph => self.show_node_graph,
             PanelId::PointCloudManager => self.pc_manager.show,
             PanelId::Count => self.count_palette.show,
             PanelId::SheetSetManager => self.sheet_set.show,
@@ -824,19 +805,11 @@ impl OpenCADStudio {
             // comes back when the pick ends or is cancelled.
             PanelId::Laywalk => {
                 let tab = &self.tabs[self.active_tab];
-                tab.layer_walk.is_some()
-                    && !(tab.layer_walk_picking && tab.active_cmd.is_some())
+                tab.layer_walk.is_some() && !(tab.layer_walk_picking && tab.active_cmd.is_some())
             }
             PanelId::QuickCalc => self.quick_calc.show,
             PanelId::CommandHistory => self.show_command_history,
             PanelId::GraphicAttributes => self.show_graphic_attributes,
-            PanelId::Plugin(num) => {
-                if let Some(panel_id) = self.plugin_panel_by_num.get(&num) {
-                    self.plugin_panels.get(panel_id).map(|p| p.visible).unwrap_or(false)
-                } else {
-                    false
-                }
-            }
         }
     }
 

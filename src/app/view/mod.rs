@@ -1,6 +1,6 @@
+use super::history::history_dropdown_labels;
 use super::tab_document::DocumentTab;
 use super::tab_document::DynComponent;
-use super::history::history_dropdown_labels;
 use super::{ArrowKey, Message, OpenCADStudio};
 use crate::scene::pick::grip::{grips_to_screen, grips_to_screen_paper, grips_to_screen_rte};
 use crate::scene::view::viewport_pane::ViewportPane;
@@ -376,9 +376,7 @@ pub(crate) fn main_window_event(
             crate::ui::ribbon::keytip_pointer_pressed();
             Some(Message::KeyTip(crate::ui::ribbon::KeyTipInput::Hide))
         }
-        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(
-            iced::mouse::Button::Left,
-        )) => {
+        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
             crate::ui::ribbon::keytip_pointer_pressed();
             Some(Message::PropPointerPressed)
         }
@@ -393,9 +391,7 @@ pub(crate) fn main_window_event(
         iced::Event::Window(window::Event::CloseRequested) => {
             Some(Message::WindowCloseRequested(win_id))
         }
-        iced::Event::Window(window::Event::Closed) => {
-            Some(Message::OsWindowClosed(win_id))
-        }
+        iced::Event::Window(window::Event::Closed) => Some(Message::OsWindowClosed(win_id)),
         #[cfg(not(target_arch = "wasm32"))]
         iced::Event::Window(window::Event::Resized(sz))
             if !crate::app::tool_windows::is_main_window(win_id) =>
@@ -455,9 +451,7 @@ pub(crate) fn main_window_event(
             crate::ui::icons::set_scale_factor(scale_factor);
             None
         }
-        iced::Event::Window(window::Event::FileDropped(path)) => {
-            Some(Message::FileDropped(path))
-        }
+        iced::Event::Window(window::Event::FileDropped(path)) => Some(Message::FileDropped(path)),
         iced::Event::Keyboard(keyboard::Event::KeyReleased { key, .. }) => {
             crate::ui::ribbon::keytip_key_released(&key)
         }
@@ -478,9 +472,7 @@ pub(crate) fn main_window_event(
             repeat,
             ..
         }) => {
-            if let Some(keytip) =
-                crate::ui::ribbon::keytip_key_pressed(&key, modifiers, repeat)
-            {
+            if let Some(keytip) = crate::ui::ribbon::keytip_key_pressed(&key, modifiers, repeat) {
                 return keytip;
             }
             #[cfg(target_arch = "wasm32")]
@@ -500,9 +492,8 @@ pub(crate) fn main_window_event(
                 && modifiers.alt()
                 && !modifiers.control()
                 && !modifiers.logo();
-            let shortcut_modifier =
-                (modifiers.control() || modifiers.alt() || modifiers.logo())
-                    && !(types_glyph && (altgr || mac_option));
+            let shortcut_modifier = (modifiers.control() || modifiers.alt() || modifiers.logo())
+                && !(types_glyph && (altgr || mac_option));
             // Any key that produces a printable glyph types it,
             // even when its logical key resolves to navigation
             // (NumLock-on Numpad8 / Numpad2 arrive as
@@ -520,8 +511,7 @@ pub(crate) fn main_window_event(
                 && matches!(
                     physical_key,
                     keyboard::key::Physical::Code(
-                        keyboard::key::Code::NumpadDecimal
-                            | keyboard::key::Code::NumpadComma
+                        keyboard::key::Code::NumpadDecimal | keyboard::key::Code::NumpadComma
                     )
                 )
             {
@@ -529,9 +519,7 @@ pub(crate) fn main_window_event(
             }
             if !shortcut_modifier && status == Status::Ignored {
                 if let Some(t) = text.as_deref() {
-                    if !t.is_empty()
-                        && t.chars().all(|c| !c.is_control() && !c.is_whitespace())
-                    {
+                    if !t.is_empty() && t.chars().all(|c| !c.is_control() && !c.is_whitespace()) {
                         return Some(Message::CommandAppendChar(t.to_string()));
                     }
                 }
@@ -543,18 +531,10 @@ pub(crate) fn main_window_event(
                         .all(|ch| !ch.is_control() && !ch.is_whitespace())
             });
             let arrow = match &key {
-                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
-                    Some(ArrowKey::Up)
-                }
-                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
-                    Some(ArrowKey::Down)
-                }
-                keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
-                    Some(ArrowKey::Left)
-                }
-                keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
-                    Some(ArrowKey::Right)
-                }
+                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(ArrowKey::Up),
+                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(ArrowKey::Down),
+                keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => Some(ArrowKey::Left),
+                keyboard::Key::Named(keyboard::key::Named::ArrowRight) => Some(ArrowKey::Right),
                 _ => None,
             };
             if !has_printable_text && status == Status::Ignored {
@@ -596,9 +576,7 @@ pub(crate) fn main_window_event(
             {
                 return None;
             }
-            if status == Status::Ignored
-                || crate::app::shortcuts::is_global_key(&shortcut)
-            {
+            if status == Status::Ignored || crate::app::shortcuts::is_global_key(&shortcut) {
                 return Some(Message::ShortcutPressed(shortcut));
             }
             // A text field captured the key. SPACE rebound away from
@@ -879,19 +857,12 @@ impl OpenCADStudio {
             .into()
         } else if tab.is_start {
             start_page_view(
-                &self.patrons,
-                &self.videos,
-                self.videos_loading,
-                &self.video_thumbs,
-                &self.discussions,
-                self.discussions_loading,
                 &self.recent_files,
                 &self.recent_thumbs,
                 self.recent_limit,
                 &self.recent_limit_input,
                 self.recent_view,
                 self.start_action_w.clone(),
-                self.start_section,
                 self.start_templates.as_deref(),
             )
         } else if is_paper {
@@ -1068,9 +1039,17 @@ bg={bg_ms:.1}ms n={view_count}"
             }
             let bg_lum = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
             let grid_style = crate::ui::overlay::GridStyle {
-                opacity: if in_block_editor { 38 } else { self.model_space.grid_opacity },
+                opacity: if in_block_editor {
+                    38
+                } else {
+                    self.model_space.grid_opacity
+                },
                 bg_luminance: bg_lum,
-                color: if in_block_editor { [0.27, 0.48, 0.91] } else { [0.80, 0.80, 0.80] },
+                color: if in_block_editor {
+                    [0.27, 0.48, 0.91]
+                } else {
+                    [0.80, 0.80, 0.80]
+                },
                 axes: self.grid_axes,
             };
             // Wipeouts hide the model-space grid (the grid is an
@@ -1102,197 +1081,177 @@ bg={bg_ms:.1}ms n={view_count}"
                     .is_some_and(|cmd| cmd.name() == "STRETCH");
 
             // Screen grips with the object they belong to, for the frames.
-            let mut owned_grips: Vec<(document::Handle, iced::Point, crate::scene::model::object::GripShape)> =
-                Vec::new();
+            let mut owned_grips: Vec<(
+                document::Handle,
+                iced::Point,
+                crate::scene::model::object::GripShape,
+            )> = Vec::new();
             let mut grip_rubber: Option<(iced::Point, iced::Point)> = None;
             let (grips, group_boxes): (Vec<crate::ui::overlay::GripMarker>, Vec<Vec<iced::Point>>) =
-                if show_grips && !tab.selected_grips.is_empty()
-            {
-                let (vw, vh) = sel_ref.view.vp_size;
-                // Overlays project through the active tile's camera, so
-                // they must use the active tile's screen rectangle (with
-                // its canvas offset) — not the whole canvas — or they
-                // land in the wrong place in a tiled layout.
-                // Inside a floating viewport the pane is the viewport's own
-                // rect + camera; otherwise the active model tile.
-                let edit_frame = tab.scene.viewport_edit_frame((vw, vh));
-                let bounds = match &edit_frame {
-                    Some((_, full)) => *full,
-                    None => tab.scene.active_model_tile_bounds(vw, vh),
-                };
-                let sel_h = tab.selected_handle;
-                // Mark the Properties panel's current point grip hot.
-                let current_vertex_grip: Option<usize> = tab
-                    .properties
-                    .prop_vertex_indicator_active
-                    .then(|| sel_h)
-                    .flatten()
-                    .and_then(|h| {
-                        let indexed = match tab.scene.document.get_entity(h) {
-                            Some(document::EntityType::LwPolyline(_))
-                            | Some(document::EntityType::Polyline2D(_))
-                            | Some(document::EntityType::Polyline3D(_))
-                            | Some(document::EntityType::Spline(_))
-                            | Some(document::EntityType::Face3D(_))
-                            | Some(document::EntityType::PolygonMesh(_)) => true,
-                            _ => false,
-                        };
-                        indexed.then_some(tab.properties.prop_vertex)
-                    });
-                // In-viewport grips are model-space; project them with the
-                // viewport camera so they sit on the wire the GPU draws.
-                // Paper entities use the 2-D paper transform; the model tab
-                // uses the model camera.
-                let project = |list: &[crate::scene::model::object::GripDef]| {
-                    if let Some((cam, _)) = &edit_frame {
-                        grips_to_screen_rte(list, cam.view_proj_rte(bounds), cam.eye(), bounds)
-                    } else if is_paper {
-                        let cam = tab.scene.camera.borrow();
-                        let aspect = if vh > 0.0 { vw / vh } else { 1.0 };
-                        let half_h = cam.ortho_size();
-                        let half_w = half_h * aspect;
-                        let tx = cam.target.x as f32;
-                        let ty = cam.target.y as f32;
-                        drop(cam);
-                        grips_to_screen_paper(list, tx, ty, half_w, half_h, bounds)
-                    } else {
-                        let cam = tab.scene.camera.borrow();
-                        grips_to_screen(list, &cam, bounds)
-                    }
-                };
-                // A dragged grip stays where the drag started, and so does a
-                // frame through it; a rubber band runs from it to the cursor.
-                let screen_grips = match tab.active_grip.as_ref() {
-                    Some(edit) => {
-                        // Every grip stays where it was when the drag
-                        // started; the dragged one marks its start point.
-                        let list = match &tab.drag_start_grips {
-                            Some(((handle, id, start), list, owners))
-                                if (*handle, *id, *start)
-                                    == (edit.handle, edit.grip_id, edit.origin_world)
-                                    && list.len() == tab.selected_grips.len()
-                                    && owners == &tab.selected_grip_handles =>
-                            {
-                                list.clone()
-                            }
-                            _ => tab.selected_grips.clone(),
-                        };
-                        // A circle's quadrant stretches from its centre.
-                        let base = match tab.scene.document.get_entity(edit.handle) {
-                            Some(document::EntityType::Circle(circle)) => {
-                                let centre = circle.center_wcs();
-                                glam::DVec3::new(centre.x, centre.y, centre.z)
-                            }
-                            _ => edit.origin_world,
-                        };
-                        let ends = project(&[
-                            crate::entities::common::square_grip(0, base),
-                            crate::entities::common::square_grip(1, edit.last_world),
-                        ]);
-                        if let [(_, from, ..), (_, to, ..)] = ends.as_slice() {
-                            grip_rubber = Some((*from, *to));
-                        }
-                        project(&list)
-                    }
-                    None => project(&tab.selected_grips),
-                };
-                owned_grips = screen_grips
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, (_, screen, _, shape, _))| {
-                        Some((*tab.selected_grip_handles.get(index)?, *screen, *shape))
-                    })
-                    .collect();
-                // GROUPDISPLAYMODE 2: each group box's four corners on screen.
-                let boxes: Vec<Vec<iced::Point>> = tab
-                    .group_boxes
-                    .iter()
-                    .map(|[min, max]| {
-                        let z = (min.z + max.z) * 0.5;
-                        let corners: Vec<crate::scene::model::object::GripDef> =
-                            [(min.x, min.y), (max.x, min.y), (max.x, max.y), (min.x, max.y)]
-                                .into_iter()
-                                .map(|(x, y)| crate::entities::common::square_grip(0, glam::DVec3::new(x, y, z)))
-                                .collect();
-                        project(&corners).into_iter().map(|grip| grip.1).collect()
-                    })
-                    .collect();
-                let markers = screen_grips
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, (_, screen, _, _, _))| {
-                        screen.x.is_finite()
-                            && screen.y.is_finite()
-                            && screen.x >= -bounds.width
-                            && screen.x <= bounds.width * 2.0
-                            && screen.y >= -bounds.height
-                            && screen.y <= bounds.height * 2.0
-                    })
-                    .map(|(index, (grip_id, screen, _is_midpoint, shape, dir))| {
-                        let owner = tab.selected_grip_handles.get(index).copied();
-                        let is_hot = owner.is_some_and(|handle| {
-                            tab.hot_grips.contains(&(handle, grip_id))
-                                || tab.active_grip.as_ref().is_some_and(|edit| {
-                                    edit.targets.iter().any(|target| {
-                                        target.handle == handle && target.grip_id == grip_id
-                                    })
-                                })
-                                || (Some(handle) == sel_h && Some(grip_id) == current_vertex_grip)
+                if show_grips && !tab.selected_grips.is_empty() {
+                    let (vw, vh) = sel_ref.view.vp_size;
+                    // Overlays project through the active tile's camera, so
+                    // they must use the active tile's screen rectangle (with
+                    // its canvas offset) — not the whole canvas — or they
+                    // land in the wrong place in a tiled layout.
+                    // Inside a floating viewport the pane is the viewport's own
+                    // rect + camera; otherwise the active model tile.
+                    let edit_frame = tab.scene.viewport_edit_frame((vw, vh));
+                    let bounds = match &edit_frame {
+                        Some((_, full)) => *full,
+                        None => tab.scene.active_model_tile_bounds(vw, vh),
+                    };
+                    let sel_h = tab.selected_handle;
+                    // Mark the Properties panel's current point grip hot.
+                    let current_vertex_grip: Option<usize> = tab
+                        .properties
+                        .prop_vertex_indicator_active
+                        .then(|| sel_h)
+                        .flatten()
+                        .and_then(|h| {
+                            let indexed = match tab.scene.document.get_entity(h) {
+                                Some(document::EntityType::LwPolyline(_))
+                                | Some(document::EntityType::Polyline2D(_))
+                                | Some(document::EntityType::Polyline3D(_))
+                                | Some(document::EntityType::Spline(_))
+                                | Some(document::EntityType::Face3D(_))
+                                | Some(document::EntityType::PolygonMesh(_)) => true,
+                                _ => false,
+                            };
+                            indexed.then_some(tab.properties.prop_vertex)
                         });
-                        let is_hovered = owner.is_some_and(|handle| {
-                            self.grip_hover.as_ref().is_some_and(|hover| {
-                                hover.handle == handle && hover.grip_id == grip_id
+                    // In-viewport grips are model-space; project them with the
+                    // viewport camera so they sit on the wire the GPU draws.
+                    // Paper entities use the 2-D paper transform; the model tab
+                    // uses the model camera.
+                    let project = |list: &[crate::scene::model::object::GripDef]| {
+                        if let Some((cam, _)) = &edit_frame {
+                            grips_to_screen_rte(list, cam.view_proj_rte(bounds), cam.eye(), bounds)
+                        } else if is_paper {
+                            let cam = tab.scene.camera.borrow();
+                            let aspect = if vh > 0.0 { vw / vh } else { 1.0 };
+                            let half_h = cam.ortho_size();
+                            let half_w = half_h * aspect;
+                            let tx = cam.target.x as f32;
+                            let ty = cam.target.y as f32;
+                            drop(cam);
+                            grips_to_screen_paper(list, tx, ty, half_w, half_h, bounds)
+                        } else {
+                            let cam = tab.scene.camera.borrow();
+                            grips_to_screen(list, &cam, bounds)
+                        }
+                    };
+                    // A dragged grip stays where the drag started, and so does a
+                    // frame through it; a rubber band runs from it to the cursor.
+                    let screen_grips = match tab.active_grip.as_ref() {
+                        Some(edit) => {
+                            // Every grip stays where it was when the drag
+                            // started; the dragged one marks its start point.
+                            let list = match &tab.drag_start_grips {
+                                Some(((handle, id, start), list, owners))
+                                    if (*handle, *id, *start)
+                                        == (edit.handle, edit.grip_id, edit.origin_world)
+                                        && list.len() == tab.selected_grips.len()
+                                        && owners == &tab.selected_grip_handles =>
+                                {
+                                    list.clone()
+                                }
+                                _ => tab.selected_grips.clone(),
+                            };
+                            // A circle's quadrant stretches from its centre.
+                            let base = match tab.scene.document.get_entity(edit.handle) {
+                                Some(document::EntityType::Circle(circle)) => {
+                                    let centre = circle.center_wcs();
+                                    glam::DVec3::new(centre.x, centre.y, centre.z)
+                                }
+                                _ => edit.origin_world,
+                            };
+                            let ends = project(&[
+                                crate::entities::common::square_grip(0, base),
+                                crate::entities::common::square_grip(1, edit.last_world),
+                            ]);
+                            if let [(_, from, ..), (_, to, ..)] = ends.as_slice() {
+                                grip_rubber = Some((*from, *to));
+                            }
+                            project(&list)
+                        }
+                        None => project(&tab.selected_grips),
+                    };
+                    owned_grips = screen_grips
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, (_, screen, _, shape, _))| {
+                            Some((*tab.selected_grip_handles.get(index)?, *screen, *shape))
+                        })
+                        .collect();
+                    // GROUPDISPLAYMODE 2: each group box's four corners on screen.
+                    let boxes: Vec<Vec<iced::Point>> = tab
+                        .group_boxes
+                        .iter()
+                        .map(|[min, max]| {
+                            let z = (min.z + max.z) * 0.5;
+                            let corners: Vec<crate::scene::model::object::GripDef> = [
+                                (min.x, min.y),
+                                (max.x, min.y),
+                                (max.x, max.y),
+                                (min.x, max.y),
+                            ]
+                            .into_iter()
+                            .map(|(x, y)| {
+                                crate::entities::common::square_grip(0, glam::DVec3::new(x, y, z))
                             })
-                        });
-                        crate::ui::overlay::GripMarker {
-                            pos: screen,
-                            shape,
-                            is_hot,
-                            is_hovered,
-                            dir,
-                            is_plugin: false,
-                            is_authoring: crate::app::block_authoring_edit::is_editor_grip(grip_id),
-                            is_dynamic: crate::app::block_actions::is_test_grip(grip_id)
-                                || grip_id == crate::app::visibility::VIS_GRIP_ID,
-                            is_filled: grip_id == crate::scene::GROUP_GRIP_ID,
-                        }
-                    })
-                    .collect();
-                (markers, boxes)
-            } else {
-                (vec![], vec![])
-            };
-            // API v11: plugin-declared custom grips render in the same overlay
-            // layer with native grip paint (always-visible display state of a
-            // live declaring plugin; hover highlighting through the same
-            // pipeline; the dragged grip is hot). Culling is the per-tab
-            // uniform grid's view-rect query, not a scan of every grip.
-            #[cfg(not(target_arch = "wasm32"))]
-            let grips = {
-                let mut grips = grips;
-                if !tab.plugin_grips.is_empty() {
-                    for (candidate, screen) in self.plugin_grips_in_view(i) {
-                        grips.push(crate::ui::overlay::GripMarker {
-                            pos: screen,
-                            shape: candidate.shape,
-                            is_hot: tab.active_plugin_grip.as_ref().is_some_and(|active| {
-                                active.plugin == candidate.plugin
-                                    && active.grip_id == candidate.grip_id
-                            }),
-                            is_hovered: self.plugin_grip_hover.as_ref().is_some_and(|hover| {
-                                hover.plugin == candidate.plugin
-                                    && hover.grip_id == candidate.grip_id
-                            }),
-                            dir: None,
-                            is_plugin: true,
-                            is_authoring: false,
-                            is_dynamic: false,
-                            is_filled: false,
-                        });
-                    }
-                }
-                grips
-            };
+                            .collect();
+                            project(&corners).into_iter().map(|grip| grip.1).collect()
+                        })
+                        .collect();
+                    let markers = screen_grips
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(_, (_, screen, _, _, _))| {
+                            screen.x.is_finite()
+                                && screen.y.is_finite()
+                                && screen.x >= -bounds.width
+                                && screen.x <= bounds.width * 2.0
+                                && screen.y >= -bounds.height
+                                && screen.y <= bounds.height * 2.0
+                        })
+                        .map(|(index, (grip_id, screen, _is_midpoint, shape, dir))| {
+                            let owner = tab.selected_grip_handles.get(index).copied();
+                            let is_hot = owner.is_some_and(|handle| {
+                                tab.hot_grips.contains(&(handle, grip_id))
+                                    || tab.active_grip.as_ref().is_some_and(|edit| {
+                                        edit.targets.iter().any(|target| {
+                                            target.handle == handle && target.grip_id == grip_id
+                                        })
+                                    })
+                                    || (Some(handle) == sel_h
+                                        && Some(grip_id) == current_vertex_grip)
+                            });
+                            let is_hovered = owner.is_some_and(|handle| {
+                                self.grip_hover.as_ref().is_some_and(|hover| {
+                                    hover.handle == handle && hover.grip_id == grip_id
+                                })
+                            });
+                            crate::ui::overlay::GripMarker {
+                                pos: screen,
+                                shape,
+                                is_hot,
+                                is_hovered,
+                                dir,
+                                is_plugin: false,
+                                is_authoring: crate::app::block_authoring_edit::is_editor_grip(
+                                    grip_id,
+                                ),
+                                is_dynamic: crate::app::block_actions::is_test_grip(grip_id)
+                                    || grip_id == crate::app::visibility::VIS_GRIP_ID,
+                                is_filled: grip_id == crate::scene::GROUP_GRIP_ID,
+                            }
+                        })
+                        .collect();
+                    (markers, boxes)
+                } else {
+                    (vec![], vec![])
+                };
             // The frame of every selected CV spline and spline-fit 2D or 3D
             // polyline: its frame-vertex grips joined in order.
             let mut framed: Vec<document::Handle> = Vec::new();
@@ -1367,73 +1326,72 @@ bg={bg_ms:.1}ms n={view_count}"
             // Rotation-only projection (view_proj_rte): the icon shows axis
             // DIRECTIONS only, so the full view_proj's huge UTM translation would
             // cancel catastrophically in f32 and make the tripod jitter.
-            let ucs_icons: Vec<crate::ui::overlay::UcsIconParams> = if !self.show_ucs_icon
-                || tab.active_block_edit_session().is_some()
-            {
-                vec![]
-            } else if let Some((vp_cam, full)) = tab.scene.viewport_edit_frame((vw, vh)) {
-                let (_, ux, uy, uz) = tab.ucs_xform().axes();
-                let origin_screen = self
-                    .ucs_icon_at_origin
-                    .then(|| {
-                        vp_cam
-                            .project(tab.ucs_origin_world(), full)
-                            .map(|p| iced::Point::new(full.x + p.x, full.y + p.y))
-                    })
-                    .flatten();
-                vec![crate::ui::overlay::UcsIconParams {
-                    view_proj: vp_cam.view_proj_rte(full),
-                    bounds: full,
-                    axes: (ux.as_vec3(), uy.as_vec3(), uz.as_vec3()),
-                    origin_screen,
-                    hover: self.ucs_icon_hover,
-                    selected: self.ucs_icon_selected,
-                }]
-            } else if !is_paper {
-                // One icon per Model pane — each at its own UCS origin, projected
-                // through that pane's camera at its pane rect. Only the active
-                // pane carries the interactive hover / selected grips.
-                let (_, ux, uy, uz) = tab.ucs_xform().axes();
-                let origin_w = tab.ucs_origin_world();
-                let active = tab.scene.active_model_tile.get();
-                let live = tab.scene.camera.borrow().clone();
-                tab.scene
-                    .model_tiles
-                    .borrow()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| {
-                        let b = iced::Rectangle {
-                            x: t.rect.x * vw,
-                            y: t.rect.y * vh,
-                            width: (t.rect.width * vw).max(1.0),
-                            height: (t.rect.height * vh).max(1.0),
-                        };
-                        let cam = if i == active {
-                            live.clone()
-                        } else {
-                            t.camera.clone()
-                        };
-                        let origin_screen = self
-                            .ucs_icon_at_origin
-                            .then(|| {
-                                cam.project(origin_w, b)
-                                    .map(|p| iced::Point::new(b.x + p.x, b.y + p.y))
-                            })
-                            .flatten();
-                        crate::ui::overlay::UcsIconParams {
-                            view_proj: cam.view_proj_rte(b),
-                            bounds: b,
-                            axes: (ux.as_vec3(), uy.as_vec3(), uz.as_vec3()),
-                            origin_screen,
-                            hover: i == active && self.ucs_icon_hover,
-                            selected: i == active && self.ucs_icon_selected,
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
+            let ucs_icons: Vec<crate::ui::overlay::UcsIconParams> =
+                if !self.show_ucs_icon || tab.active_block_edit_session().is_some() {
+                    vec![]
+                } else if let Some((vp_cam, full)) = tab.scene.viewport_edit_frame((vw, vh)) {
+                    let (_, ux, uy, uz) = tab.ucs_xform().axes();
+                    let origin_screen = self
+                        .ucs_icon_at_origin
+                        .then(|| {
+                            vp_cam
+                                .project(tab.ucs_origin_world(), full)
+                                .map(|p| iced::Point::new(full.x + p.x, full.y + p.y))
+                        })
+                        .flatten();
+                    vec![crate::ui::overlay::UcsIconParams {
+                        view_proj: vp_cam.view_proj_rte(full),
+                        bounds: full,
+                        axes: (ux.as_vec3(), uy.as_vec3(), uz.as_vec3()),
+                        origin_screen,
+                        hover: self.ucs_icon_hover,
+                        selected: self.ucs_icon_selected,
+                    }]
+                } else if !is_paper {
+                    // One icon per Model pane — each at its own UCS origin, projected
+                    // through that pane's camera at its pane rect. Only the active
+                    // pane carries the interactive hover / selected grips.
+                    let (_, ux, uy, uz) = tab.ucs_xform().axes();
+                    let origin_w = tab.ucs_origin_world();
+                    let active = tab.scene.active_model_tile.get();
+                    let live = tab.scene.camera.borrow().clone();
+                    tab.scene
+                        .model_tiles
+                        .borrow()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| {
+                            let b = iced::Rectangle {
+                                x: t.rect.x * vw,
+                                y: t.rect.y * vh,
+                                width: (t.rect.width * vw).max(1.0),
+                                height: (t.rect.height * vh).max(1.0),
+                            };
+                            let cam = if i == active {
+                                live.clone()
+                            } else {
+                                t.camera.clone()
+                            };
+                            let origin_screen = self
+                                .ucs_icon_at_origin
+                                .then(|| {
+                                    cam.project(origin_w, b)
+                                        .map(|p| iced::Point::new(b.x + p.x, b.y + p.y))
+                                })
+                                .flatten();
+                            crate::ui::overlay::UcsIconParams {
+                                view_proj: cam.view_proj_rte(b),
+                                bounds: b,
+                                axes: (ux.as_vec3(), uy.as_vec3(), uz.as_vec3()),
+                                origin_screen,
+                                hover: i == active && self.ucs_icon_hover,
+                                selected: i == active && self.ucs_icon_selected,
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
 
             // OST tracking points → screen positions, projected relative-to-eye
             // so they stay precise at UTM-scale coordinates (the full
@@ -1668,8 +1626,15 @@ bg={bg_ms:.1}ms n={view_count}"
                     &tab.scene.document,
                     session.br_handle,
                 )?;
-                let native_point = crate::scene::block_grips::config::locations(&tab.scene.document, session.br_handle, parameter.handle).ok()
-                    .and_then(|grips| grips.into_iter().next()).map(|grip| grip.point).unwrap_or(parameter.def_point);
+                let native_point = crate::scene::block_grips::config::locations(
+                    &tab.scene.document,
+                    session.br_handle,
+                    parameter.handle,
+                )
+                .ok()
+                .and_then(|grips| grips.into_iter().next())
+                .map(|grip| grip.point)
+                .unwrap_or(parameter.def_point);
                 let location = glam::DVec3::new(native_point.x, native_point.y, native_point.z);
                 let point = tab.scene.camera.borrow().project(location, vp_bounds)?;
                 let point = iced::Point::new(vp_bounds.x + point.x, vp_bounds.y + point.y);
@@ -1706,7 +1671,9 @@ bg={bg_ms:.1}ms n={view_count}"
                                 parameter.position_name.clone(),
                                 vp_bounds,
                                 tab.selected_authoring == Some(handle)
-                                    || tab.active_cmd.as_ref().is_some_and(|command| command.selection_marker_selected(handle)),
+                                    || tab.active_cmd.as_ref().is_some_and(|command| {
+                                        command.selection_marker_selected(handle)
+                                    }),
                             ))
                         })
                         .collect()
@@ -2057,12 +2024,8 @@ bg={bg_ms:.1}ms n={view_count}"
             .as_ref()
             .map(|c| c.needs_entity_pick() || c.needs_structure_point_pick())
             .unwrap_or(false);
-        #[cfg(not(target_arch = "wasm32"))]
-        let plugin_grip_active = tab.active_plugin_grip.is_some();
-        #[cfg(target_arch = "wasm32")]
-        let plugin_grip_active = false;
         let dyn_input_overlay: Option<Element<'_, Message>> = if self.dyn_input
-            && (tab.active_cmd.is_some() || tab.active_grip.is_some() || plugin_grip_active)
+            && (tab.active_cmd.is_some() || tab.active_grip.is_some())
             && (!tab.dyn_fields.is_empty() || dyn_picks_object)
         {
             let w = tab.last_cursor_world;
@@ -2581,11 +2544,18 @@ bg={bg_ms:.1}ms n={view_count}"
             // HATCH's settings float at the drawing's top left (HPDLGMODE,
             // or seTtings).
             if self.model_space.hatch_dialog_mode != 0 || self.hatch_panel_shown {
-                if let Some(settings) =
-                    tab.active_cmd.as_ref().and_then(|command| command.hatch_settings())
+                if let Some(settings) = tab
+                    .active_cmd
+                    .as_ref()
+                    .and_then(|command| command.hatch_settings())
                 {
-                    let mut layers: Vec<String> =
-                        tab.scene.document.layers.iter().map(|layer| layer.name.clone()).collect();
+                    let mut layers: Vec<String> = tab
+                        .scene
+                        .document
+                        .layers
+                        .iter()
+                        .map(|layer| layer.name.clone())
+                        .collect();
                     layers.sort_by_key(|name| name.to_lowercase());
                     viewport_stack = viewport_stack.push(position_canvas_overlay(
                         iced::Point::new(12.0, 40.0),
@@ -2593,12 +2563,24 @@ bg={bg_ms:.1}ms n={view_count}"
                     ));
                 }
             }
-            let (vw,vh)=tab.scene.selection.borrow().view.vp_size;
-            let bar_bounds=tab.scene.active_model_tile_bounds(vw,vh);
-            let bar_color=crate::ui::overlay::authoring::AuthoringVisualOptions::new(&self.block_editor_preferences,&tab.scene.document,crosshair_background(tab,is_paper)).action;
-            for (group,point,offset,width) in self.action_bar_layout(bar_bounds) {
-                let bar=crate::ui::window::block_action_bars::view(group,tab.selected_authoring,offset,width,tab.active_cmd.is_none(),bar_color);
-                viewport_stack=viewport_stack.push(position_canvas_overlay(point,bar));
+            let (vw, vh) = tab.scene.selection.borrow().view.vp_size;
+            let bar_bounds = tab.scene.active_model_tile_bounds(vw, vh);
+            let bar_color = crate::ui::overlay::authoring::AuthoringVisualOptions::new(
+                &self.block_editor_preferences,
+                &tab.scene.document,
+                crosshair_background(tab, is_paper),
+            )
+            .action;
+            for (group, point, offset, width) in self.action_bar_layout(bar_bounds) {
+                let bar = crate::ui::window::block_action_bars::view(
+                    group,
+                    tab.selected_authoring,
+                    offset,
+                    width,
+                    tab.active_cmd.is_none(),
+                    bar_color,
+                );
+                viewport_stack = viewport_stack.push(position_canvas_overlay(point, bar));
             }
             // The Test Block window keeps the definition's current
             // visibility state and lookup row on screen.
@@ -2607,12 +2589,9 @@ bg={bg_ms:.1}ms n={view_count}"
                     let height = test_block_widgets_height(&widgets);
                     if height > 0.0 {
                         let min_x = bar_bounds.x + 4.0;
-                        let max_x = (bar_bounds.x + bar_bounds.width
-                            - TEST_WIDGET_PANEL_W
-                            - 4.0)
+                        let max_x = (bar_bounds.x + bar_bounds.width - TEST_WIDGET_PANEL_W - 4.0)
                             .max(min_x);
-                        let x = (bar_bounds.x
-                            + (bar_bounds.width - TEST_WIDGET_PANEL_W) * 0.5)
+                        let x = (bar_bounds.x + (bar_bounds.width - TEST_WIDGET_PANEL_W) * 0.5)
                             .clamp(min_x, max_x);
                         let y = bar_bounds.y + bar_bounds.height
                             - height
@@ -2872,7 +2851,8 @@ bg={bg_ms:.1}ms n={view_count}"
             mark("chrome");
             let command_line_inset = command_line_inset(self);
             if let Some((cursor, tip)) = self.hovered_dynamic_grip_tip() {
-                viewport_stack = viewport_stack.push(overlay::grip_tip_overlay(cursor, command_line_inset, tip));
+                viewport_stack =
+                    viewport_stack.push(overlay::grip_tip_overlay(cursor, command_line_inset, tip));
             }
             if !tab.is_start {
                 if let Some(readout) = self.measurement_readout(self.active_tab) {
@@ -3100,10 +3080,17 @@ bg={bg_ms:.1}ms n={view_count}"
                 let canvas = tab.scene.selection.borrow().view.vp_size;
                 // The editor's modal would swallow the clicks of a pick that
                 // the Field dialog started from it, so it waits meanwhile.
-                if let (Some(ed), Some(cell)) = (self.mtext_editor.as_ref(), self.table_cell_canvas()) {
-                    viewport_stack = viewport_stack.push(overlay::table_cell_editor_overlay(ed, cell, canvas));
+                if let (Some(ed), Some(cell)) =
+                    (self.mtext_editor.as_ref(), self.table_cell_canvas())
+                {
+                    viewport_stack =
+                        viewport_stack.push(overlay::table_cell_editor_overlay(ed, cell, canvas));
                 }
-                if let Some(ed) = self.mtext_editor.as_ref().filter(|_| tab.active_cmd.is_none() && self.table_cell_editor.is_none()) {
+                if let Some(ed) = self
+                    .mtext_editor
+                    .as_ref()
+                    .filter(|_| tab.active_cmd.is_none() && self.table_cell_editor.is_none())
+                {
                     let styles: Vec<String> = tab
                         .scene
                         .document
@@ -3123,11 +3110,6 @@ bg={bg_ms:.1}ms n={view_count}"
                     viewport_stack = viewport_stack.push(text_inline_overlay(ed, canvas));
                 }
             }
-        }
-
-        if self.show_node_graph && !tab.is_start {
-            let sections = self.graph_all_sections(self.active_tab);
-            viewport_stack = viewport_stack.push(tab.graph.view(sections));
         }
 
         // Docked pallets: each edge's icon strip and shown group (see
@@ -3168,7 +3150,6 @@ bg={bg_ms:.1}ms n={view_count}"
             self.control.enabled,
             self.control_busy(),
             self.pending_pick_label().is_some(),
-            self.show_node_graph,
         );
         let center_stack: Element<'_, Message> = if thumbnail_capture_clean {
             workspace
@@ -3354,8 +3335,13 @@ bg={bg_ms:.1}ms n={view_count}"
                             viewport_scale_synced: tab.scene.viewport_annotation_scale_synced(),
                             viewport_locked: tab.scene.viewports_display_locked(),
                             lineweight_display: tab.scene.document.header.lineweight_display,
-                            constraint_status: tab.active_block_edit_session().map(|_| tab.scene.block_constraint_status_mode),
-                            geo_system: tab.scene.geo_data().map(crate::entities::object_data::geo_system_label),
+                            constraint_status: tab
+                                .active_block_edit_session()
+                                .map(|_| tab.scene.block_constraint_status_mode),
+                            geo_system: tab
+                                .scene
+                                .geo_data()
+                                .map(crate::entities::object_data::geo_system_label),
                         },
                         crate::ui::statusbar::StatusBarModes {
                             ortho_mode: self.ortho_mode,
@@ -3605,17 +3591,13 @@ bg={bg_ms:.1}ms n={view_count}"
         // A dialog in a window of its own is drawn there, also while it is
         // the active modal (the colour picker it opened holds it).
         let in_own_window = self.active_modal.is_some_and(|kind| {
-            self.tool_windows.iter().any(|tool| tool.kind == kind && !tool.in_canvas())
+            self.tool_windows
+                .iter()
+                .any(|tool| tool.kind == kind && !tool.in_canvas())
         });
         let base: Element<'_, Message> = match self.modal_content().filter(|_| !in_own_window) {
             Some(content) => {
-                let modal_options = if cfg!(target_arch = "wasm32")
-                    && matches!(self.active_modal, Some(super::ModalKind::PluginManager))
-                {
-                    crate::ui::modal::ModalOptions::NOTICE
-                } else {
-                    crate::ui::modal::ModalOptions::STANDARD
-                };
+                let modal_options = crate::ui::modal::ModalOptions::STANDARD;
                 crate::ui::modal::modal(
                     modal_underlay,
                     self.modal_title(),
@@ -3788,7 +3770,8 @@ impl OpenCADStudio {
         // window) must not hold the save: a timer goes ahead without it.
         let thumbnail_capture = if self.thumbnail_capture_clean {
             Subscription::batch([
-                crate::app::tool_windows::main_window_frames().map(|_| Message::ThumbnailCaptureFrame),
+                crate::app::tool_windows::main_window_frames()
+                    .map(|_| Message::ThumbnailCaptureFrame),
                 iced::time::every(std::time::Duration::from_millis(300))
                     .map(|_| Message::ThumbnailCaptureFrame),
             ])
@@ -3800,7 +3783,8 @@ impl OpenCADStudio {
         // pending.
         let capture_frame = if self.control.capture_frame_pending {
             Subscription::batch([
-                crate::app::tool_windows::main_window_frames().map(|_| Message::ControlCaptureFrame { redrew: true }),
+                crate::app::tool_windows::main_window_frames()
+                    .map(|_| Message::ControlCaptureFrame { redrew: true }),
                 iced::time::every(std::time::Duration::from_millis(50))
                     .map(|_| Message::ControlCaptureFrame { redrew: false }),
             ])
@@ -3856,18 +3840,6 @@ impl OpenCADStudio {
         let single_instance = crate::io::single_instance::subscribe().map(Message::OpenExternal);
         #[cfg(target_arch = "wasm32")]
         let single_instance = Subscription::none();
-        // Drain plugin-to-host requests on a timer when any plugin is loaded.
-        // This lets long-lived plugin sessions (e.g. the Python REPL) mutate the
-        // host document without requiring a user-generated message.
-        #[cfg(not(target_arch = "wasm32"))]
-        let plugin_drain = if crate::plugin::external::with_manager(|mgr| !mgr.ids().is_empty()) {
-            iced::time::every(std::time::Duration::from_millis(100))
-                .map(|_| Message::DrainPluginRequests)
-        } else {
-            Subscription::none()
-        };
-        #[cfg(target_arch = "wasm32")]
-        let plugin_drain = Subscription::none();
         // While a sheet set is open: it reloads when its .dst changes on disk,
         // and its sheets' .dwl lock files follow the open tabs.
         #[cfg(not(target_arch = "wasm32"))]
@@ -3897,11 +3869,7 @@ impl OpenCADStudio {
             event::listen_with(main_window_event)
         };
         #[cfg(not(target_arch = "wasm32"))]
-        let control = iced::Subscription::batch([
-            super::control::subscribe().map(Message::ControlRequest),
-            // Loopback REST channel when launched with files + --http.
-            super::control::http_bridge::subscribe().map(Message::ControlRequest),
-        ]);
+        let control = Subscription::none();
         #[cfg(target_arch = "wasm32")]
         let control = iced::time::every(std::time::Duration::from_millis(50))
             .map(|_| Message::PollWebControl);
@@ -3941,7 +3909,6 @@ impl OpenCADStudio {
             ribbon_minimize,
             web_fonts,
             autosave,
-            plugin_drain,
             sheet_set_poll,
             single_instance,
             hatch_pattern_keys,
@@ -4303,15 +4270,15 @@ fn pane_mouse_area<'a>(idx: usize) -> Element<'a, Message> {
             .width(Fill)
             .height(Fill),
     ))
-        .on_press(Message::PanePress(idx))
-        .on_release(Message::PaneRelease(idx))
-        .on_right_press(Message::PaneRightPress(idx))
-        .on_right_release(Message::PaneRightRelease(idx))
-        .on_middle_press(Message::PaneMiddlePress(idx))
-        .on_middle_release(Message::PaneMiddleRelease(idx))
-        .on_scroll(move |d| Message::PaneScroll(idx, d))
-        .on_exit(Message::ViewportExit)
-        .into()
+    .on_press(Message::PanePress(idx))
+    .on_release(Message::PaneRelease(idx))
+    .on_right_press(Message::PaneRightPress(idx))
+    .on_right_release(Message::PaneRightRelease(idx))
+    .on_middle_press(Message::PaneMiddlePress(idx))
+    .on_middle_release(Message::PaneMiddleRelease(idx))
+    .on_scroll(move |d| Message::PaneScroll(idx, d))
+    .on_exit(Message::ViewportExit)
+    .into()
 }
 
 const START_ACTION_RADIUS: f32 = 6.0;
@@ -4322,29 +4289,16 @@ fn start_action_shape(mut style: button::Style) -> button::Style {
 }
 
 pub(super) fn start_page_view<'a>(
-    patrons: &'a [(String, i64)],
-    videos: &'a [crate::videos::VideoEntry],
-    videos_loading: bool,
-    video_thumbs: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
-    discussions: &'a [crate::discussions::DiscussionEntry],
-    discussions_loading: bool,
     recents: &'a [std::path::PathBuf],
     thumbs: &'a std::collections::HashMap<std::path::PathBuf, Option<iced::widget::image::Handle>>,
     recent_limit: usize,
     recent_limit_input: &'a str,
     recent_view: super::RecentView,
     action_width_out: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    active: super::StartSection,
     templates: Option<&'a [std::path::PathBuf]>,
 ) -> Element<'a, Message> {
     responsive(move |size| {
         start_page_content(
-            patrons,
-            videos,
-            videos_loading,
-            video_thumbs,
-            discussions,
-            discussions_loading,
             recents,
             thumbs,
             recent_limit,
@@ -4352,7 +4306,6 @@ pub(super) fn start_page_view<'a>(
             recent_view,
             size.width,
             action_width_out.clone(),
-            active,
             templates,
         )
     })
@@ -4360,12 +4313,6 @@ pub(super) fn start_page_view<'a>(
 }
 
 fn start_page_content<'a>(
-    patrons: &'a [(String, i64)],
-    videos: &'a [crate::videos::VideoEntry],
-    videos_loading: bool,
-    video_thumbs: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
-    discussions: &'a [crate::discussions::DiscussionEntry],
-    discussions_loading: bool,
     recents: &'a [std::path::PathBuf],
     thumbs: &'a std::collections::HashMap<std::path::PathBuf, Option<iced::widget::image::Handle>>,
     recent_limit: usize,
@@ -4373,7 +4320,6 @@ fn start_page_content<'a>(
     recent_view: super::RecentView,
     avail_w: f32,
     action_width_out: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    active: super::StartSection,
     templates: Option<&'a [std::path::PathBuf]>,
 ) -> Element<'a, Message> {
     let headline = text("Open CAD Studio").size(40).style(start_primary_style);
@@ -4402,28 +4348,8 @@ fn start_page_content<'a>(
             })
     };
 
-    // Donate — the prominent call-to-action, using the theme's danger role.
-    let donate_btn = {
-        button(
-            row![
-                crate::ui::icons::themed_danger_text(crate::ui::icons::HEART, 14.0),
-                text(crate::tr!("start", "donate")).size(14),
-            ]
-            .spacing(5)
-            .align_y(iced::Center),
-        )
-        .on_press(Message::RibbonToolClick {
-            tool_id: "DONATE".to_string(),
-            event: crate::modules::ModuleEvent::Command("DONATE".to_string()),
-        })
-        .padding([10, 22])
-        .style(|theme: &Theme, status| start_action_shape(button::danger(theme, status)))
-    };
-
     let primary_row = WrapFlow::new(vec![
         outline_btn(crate::tr!("start", "new-drawing"), Message::TabNew).into(),
-        // The templates beside the default one, then Browse (NEW asks for a
-        // .dwt, .dwg or .dxf); straight to NEW when there is no such folder.
         {
             let head = outline_btn(
                 crate::tr!("start", "new-from-template"),
@@ -4471,592 +4397,47 @@ fn start_page_content<'a>(
             }
         },
         outline_btn(crate::tr!("start", "open-file"), Message::OpenFile).into(),
-        donate_btn.into(),
     ])
     .spacing_x(12.0)
     .row_h(48.0)
     .report_natural_width(action_width_out.clone());
-
-    #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
-    let mut secondary_items: Vec<Element<'a, Message>> = vec![
-        outline_btn(
-            crate::tr!("start", "send-feedback"),
-            Message::RibbonToolClick {
-                tool_id: "REPORT".to_string(),
-                event: crate::modules::ModuleEvent::Command("REPORT".to_string()),
-            },
-        )
-        .into(),
-        outline_btn(crate::tr!("action", "options"), Message::OptionsOpen).into(),
-    ];
-    secondary_items
-        .push(outline_btn(crate::tr!("action", "plugins"), Message::PluginManagerOpen).into());
-    // The web build is already in the browser, so only the desktop offers a
-    // link to the web version.
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        // Filled with the active theme's primary colour.
-        secondary_items.push(
-            button(text(crate::t!("OCS Web")).size(14))
-                .on_press(Message::RibbonToolClick {
-                    tool_id: "WEBVERSION".to_string(),
-                    event: crate::modules::ModuleEvent::Command("WEBVERSION".to_string()),
-                })
-                .padding([10, 22])
-                .style(|theme: &Theme, status| start_action_shape(button::primary(theme, status)))
-                .into(),
-        );
-    }
-    #[cfg(target_arch = "wasm32")]
-    secondary_items.push(
-        button(text(crate::t!("OCS Desktop")).size(14))
-            .on_press(Message::OpenUrl(
-                "https://github.com/HakanSeven12/OpenCADStudio/releases/latest".to_string(),
-            ))
-            .padding([10, 22])
-            .style(|theme: &Theme, status| start_action_shape(button::primary(theme, status)))
-            .into(),
-    );
-    let secondary_row = WrapFlow::new(secondary_items)
-        .spacing_x(12.0)
-        .row_h(44.0)
-        .report_natural_width(action_width_out.clone());
-
-    let reddit_btn = button(
-        row![
-            iced::widget::svg(iced::widget::svg::Handle::from_memory(include_bytes!(
-                "../../../assets/icons/reddit.svg"
-            )))
-            .width(20)
-            .height(20),
-            text("r/OpenCADStudio").size(14),
-        ]
-        .spacing(7)
-        .align_y(iced::Center),
-    )
-    .on_press(Message::OpenUrl(
-        "https://www.reddit.com/r/OpenCADStudio/".to_string(),
-    ))
-    .padding([10, 22])
-    .style(|theme: &Theme, status| {
-        let palette = theme.palette();
-        let pair = match status {
-            button::Status::Hovered => palette.background.strong,
-            _ => palette.background.weak,
-        };
-        start_action_shape(button::Style {
-            background: Some(Background::Color(pair.color)),
-            text_color: pair.text,
-            border: Border {
-                color: Color::from_rgb8(255, 69, 0),
-                width: 1.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-    });
-
-    let sponsors = column![
-        text(crate::tr!("start", "sponsors")).size(15),
-        mouse_area(
-            container(
-                iced::widget::svg(iced::widget::svg::Handle::from_memory(include_bytes!(
-                    "../../../assets/sponsors/openaec-logo-dark-on-light.svg"
-                )))
-                .width(Fill)
-                .height(iced::Length::Fixed(120.0))
-                .content_fit(iced::ContentFit::Contain),
-            )
-            .width(Fill.max(300.0)),
-        )
-        .interaction(iced::mouse::Interaction::Pointer)
-        .on_press(Message::OpenUrl("https://open-aec.com/".to_string())),
-    ]
-    .spacing(10)
-    .align_x(iced::alignment::Horizontal::Center)
-    .width(Fill);
 
     let content = column![
         Space::new().height(iced::Length::Fixed(28.0)),
         container(headline).center_x(Fill),
         Space::new().height(iced::Length::Fixed(22.0)),
         container(primary_row).center_x(Fill),
-        Space::new().height(iced::Length::Fixed(10.0)),
-        container(secondary_row).center_x(Fill),
-        Space::new().height(iced::Length::Fixed(10.0)),
-        container(reddit_btn).center_x(Fill),
-        Space::new().height(iced::Length::Fixed(20.0)),
-        sponsors,
-        Space::new().height(iced::Length::Fixed(52.0)),
+        Space::new().height(iced::Length::Fixed(12.0)),
+        outline_btn(crate::tr!("action", "options"), Message::OptionsOpen),
     ]
     .spacing(0)
     .width(Fill)
     .height(Fill);
 
-    // Collapse side panels one at a time as width shrinks: Tutorials first,
-    // then Discussions, Supporters, and Recent Documents last.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum StartLayout {
-        AllPanels,
-        WithoutVideos,
-        WithoutVideosAndDiscussions,
-        RecentAndWelcome,
-        Compact,
-    }
-    let panel_w = 280.0f32;
-    const VIDEO_PANEL_PADDING: f32 = 16.0;
-    const VIDEO_SCROLL_GUTTER: f32 = 14.0;
+    let panel_w = 280.0;
     let measured_action_w =
         f32::from_bits(action_width_out.load(std::sync::atomic::Ordering::Relaxed));
-    let welcome_wide_min = measured_action_w.max(360.0);
-    let avail = (avail_w - 16.0).max(0.0); // minus the page's l/r padding
-    let panel_widths = [panel_w; 4];
-    let mut panel_visible = [true, true, true, true];
-    let required_width = |visible: &[bool; 4]| {
-        let visible_panels = visible.iter().filter(|&&shown| shown).count();
-        welcome_wide_min
-            + panel_widths
-                .iter()
-                .zip(visible)
-                .filter_map(|(width, shown)| shown.then_some(*width))
-                .sum::<f32>()
-            + visible_panels as f32 * 16.0
-    };
-    // Re-measure after every collapse. There are no independent breakpoints:
-    // the available width and the panels' preferred widths decide the state.
-    for panel in [1usize, 2, 3, 0] {
-        if required_width(&panel_visible) <= avail {
-            break;
-        }
-        panel_visible[panel] = false;
-    }
-    let start_layout = match panel_visible {
-        [true, true, true, true] => StartLayout::AllPanels,
-        [true, false, true, true] => StartLayout::WithoutVideos,
-        [true, false, false, true] => StartLayout::WithoutVideosAndDiscussions,
-        [true, false, false, false] => StartLayout::RecentAndWelcome,
-        _ => StartLayout::Compact,
-    };
-
+    let compact = avail_w < measured_action_w.max(360.0) + panel_w + 48.0;
     let recent = recent_files_panel(
         recents,
         thumbs,
         recent_limit,
         recent_limit_input,
         recent_view,
-        match start_layout {
-            StartLayout::AllPanels
-            | StartLayout::WithoutVideos
-            | StartLayout::WithoutVideosAndDiscussions
-            | StartLayout::RecentAndWelcome => iced::Length::Fixed(panel_w),
-            StartLayout::Compact => iced::Length::Fill,
+        if compact {
+            iced::Length::Fill
+        } else {
+            iced::Length::Fixed(panel_w)
         },
     );
     let welcome = container(content).width(Fill).height(Fill);
-
-    // Tutorial-videos rail: the official playlist, fetched at boot (cached on
-    // disk) — thumbnail card + title per video, click opens the browser.
-    let videos_panel: Element<'a, Message> = {
-        // Derive the 16:9 cover box from the actual shared list width so the
-        // whole thumbnail remains visible when that width changes.
-        let thumb_h = (panel_w - VIDEO_PANEL_PADDING * 2.0 - VIDEO_SCROLL_GUTTER) * 9.0 / 16.0;
-        let mut list = column![text(crate::tr!("start", "tutorials")).size(15)]
-            .spacing(10)
-            .width(Fill)
-            // Keep the scrollbar off the thumbnails.
-            .padding(iced::Padding {
-                right: VIDEO_SCROLL_GUTTER,
-                ..iced::Padding::ZERO
-            });
-        for v in videos {
-            let mut card = column![].spacing(6).width(Fill);
-            if let Some(handle) = video_thumbs.get(&v.id) {
-                card = card.push(
-                    container(
-                        iced::widget::image(handle.clone())
-                            .width(Fill)
-                            .height(iced::Length::Fixed(thumb_h))
-                            .content_fit(iced::ContentFit::Contain),
-                    )
-                    .width(Fill)
-                    .height(iced::Length::Fixed(thumb_h))
-                    .style(|theme: &Theme| container::Style {
-                        border: Border {
-                            color: theme.palette().background.neutral.color,
-                            width: 1.0,
-                            radius: 6.0.into(),
-                        },
-                        ..Default::default()
-                    })
-                    .clip(true),
-                );
-            }
-            card = card.push(text(v.title.clone()).size(12).style(start_muted_style));
-            list = list.push(
-                mouse_area(card)
-                    .interaction(iced::mouse::Interaction::Pointer)
-                    .on_press(Message::OpenUrl(crate::videos::watch_url(&v.id))),
-            );
-        }
-        if videos.is_empty() {
-            let note = if videos_loading {
-                crate::tr!("start", "loading-videos")
-            } else {
-                crate::tr!("start", "videos-online")
-            };
-            list = list.push(text(note).size(12).style(start_muted_style));
-        }
-        let playlist_btn = mouse_area(
-            container(text(crate::tr!("start", "open-playlist")).size(12))
-                .padding([6, 10])
-                .width(Fill)
-                .center_x(Fill)
-                .style(|theme: &Theme| {
-                    let pair = theme.palette().danger.base;
-                    container::Style {
-                        background: Some(Background::Color(pair.color)),
-                        border: Border {
-                            color: Color::TRANSPARENT,
-                            width: 0.0,
-                            radius: 6.0.into(),
-                        },
-                        text_color: Some(pair.text),
-                        ..Default::default()
-                    }
-                }),
-        )
-        .interaction(iced::mouse::Interaction::Pointer)
-        .on_press(Message::OpenUrl(crate::videos::PLAYLIST_URL.to_string()));
-        container(column![
-            iced::widget::scrollable(list).height(Fill),
-            Space::new().height(iced::Length::Fixed(12.0)),
-            playlist_btn,
-        ])
-        .width(match start_layout {
-            StartLayout::AllPanels => iced::Length::Fixed(panel_w),
-            StartLayout::WithoutVideos
-            | StartLayout::WithoutVideosAndDiscussions
-            | StartLayout::RecentAndWelcome
-            | StartLayout::Compact => iced::Length::Fill,
-        })
-        .height(Fill)
-        .padding(VIDEO_PANEL_PADDING)
-        .style(|theme: &Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(Background::Color(palette.background.weak.color)),
-                border: Border {
-                    color: palette.background.neutral.color,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .into()
-    };
-
-    // GitHub Discussions rail. Native builds refresh from GitHub's public feed;
-    // web builds read the CI-generated snapshot. Both sources mark pinned
-    // discussions and sort them before the rest of the list.
-    let discussions_panel: Element<'a, Message> = {
-        let mut list = column![text(crate::tr!("start", "discussions")).size(15)]
-            .spacing(8)
-            .width(Fill);
-        for discussion in discussions {
-            let mut meta = iced::widget::row![text(format!("#{}", discussion.number))
-                .size(10)
-                .style(start_muted_style),]
-            .spacing(6)
-            .align_y(iced::Center);
-            if discussion.pinned {
-                meta = meta.push(
-                    text(crate::tr!("start", "pinned"))
-                        .size(10)
-                        .style(start_primary_style),
-                );
-            }
-            if !discussion.author.is_empty() {
-                meta = meta.push(
-                    text(format!("@{}", discussion.author))
-                        .size(10)
-                        .style(start_muted_style),
-                );
-            }
-            let card =
-                container(column![text(discussion.title.clone()).size(12), meta,].spacing(4))
-                    .padding([8, 10])
-                    .width(Fill)
-                    .style(|theme: &Theme| {
-                        let palette = theme.palette();
-                        container::Style {
-                            background: Some(Background::Color(
-                                palette.background.base.color.scale_alpha(0.42),
-                            )),
-                            border: Border {
-                                color: palette.background.neutral.color,
-                                width: 1.0,
-                                radius: 6.0.into(),
-                            },
-                            ..Default::default()
-                        }
-                    });
-            list = list.push(
-                mouse_area(card)
-                    .interaction(iced::mouse::Interaction::Pointer)
-                    .on_press(Message::OpenUrl(discussion.url.clone())),
-            );
-        }
-        if discussions.is_empty() {
-            let note = if discussions_loading {
-                crate::tr!("start", "loading-discussions")
-            } else {
-                crate::tr!("start", "discussions-online")
-            };
-            list = list.push(text(note).size(12).style(start_muted_style));
-        }
-        let open_btn = mouse_area(
-            container(text(crate::tr!("start", "open-discussions")).size(12))
-                .padding([6, 10])
-                .width(Fill)
-                .center_x(Fill)
-                .style(|theme: &Theme| {
-                    let pair = theme.palette().primary.base;
-                    container::Style {
-                        background: Some(Background::Color(pair.color)),
-                        border: Border {
-                            color: Color::TRANSPARENT,
-                            width: 0.0,
-                            radius: 6.0.into(),
-                        },
-                        text_color: Some(pair.text),
-                        ..Default::default()
-                    }
-                }),
-        )
-        .interaction(iced::mouse::Interaction::Pointer)
-        .on_press(Message::OpenUrl(
-            crate::discussions::DISCUSSIONS_URL.to_string(),
-        ));
-        container(column![
-            iced::widget::scrollable(list).height(Fill),
-            Space::new().height(iced::Length::Fixed(12.0)),
-            open_btn,
-        ])
-        .width(match start_layout {
-            StartLayout::AllPanels | StartLayout::WithoutVideos => iced::Length::Fixed(panel_w),
-            StartLayout::WithoutVideosAndDiscussions
-            | StartLayout::RecentAndWelcome
-            | StartLayout::Compact => iced::Length::Fill,
-        })
-        .height(Fill)
-        .padding(16)
-        .style(|theme: &Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(Background::Color(palette.background.weak.color)),
-                border: Border {
-                    color: palette.background.neutral.color,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .into()
-    };
-
-    // Right rail: Patreon supporters, fetched at boot. When the list is empty
-    // (no token configured / offline) only the "Support on Patreon" button
-    // shows, so the rail always invites support.
-    let supporters: Element<'a, Message> = {
-        let mut list = column![
-            text(crate::tr!("start", "supporters")).size(15),
-            Space::new().height(iced::Length::Fixed(12.0)),
-        ]
-        .spacing(6)
-        .padding(iced::Padding {
-            right: 12.0,
-            ..iced::Padding::ZERO
-        })
-        .width(Fill);
-        for (name, cents) in patrons {
-            // Patreon payments are normalized to USD cents while the list is
-            // generated; hand-maintained entries use USD cents as well.
-            let amount = format!("${:.2}", *cents as f64 / 100.0);
-            list = list.push(
-                iced::widget::row![
-                    text(name).size(12).style(start_muted_style).width(Fill),
-                    text(amount).size(12).style(start_muted_style),
-                ]
-                .spacing(6),
-            );
-        }
-        let support_btn = mouse_area(
-            container(
-                iced::widget::row![
-                    crate::ui::icons::themed_danger_text(crate::ui::icons::HEART, 13.0),
-                    text(crate::tr!("start", "support-on-patreon")).size(12),
-                ]
-                .spacing(6)
-                .align_y(iced::Center),
-            )
-            .padding([6, 10])
-            .width(Fill)
-            .center_x(Fill)
-            .style(|theme: &Theme| {
-                let pair = theme.palette().danger.base;
-                container::Style {
-                    background: Some(Background::Color(pair.color)),
-                    border: Border {
-                        color: Color::TRANSPARENT,
-                        width: 0.0,
-                        radius: 6.0.into(),
-                    },
-                    text_color: Some(pair.text),
-                    ..Default::default()
-                }
-            }),
-        )
-        .interaction(iced::mouse::Interaction::Pointer)
-        .on_press(Message::OpenUrl(
-            "https://patreon.com/HakanSeven12".to_string(),
-        ));
-        container(column![
-            iced::widget::scrollable(list).height(Fill),
-            Space::new().height(iced::Length::Fixed(12.0)),
-            support_btn,
-        ])
-        .width(match start_layout {
-            StartLayout::AllPanels
-            | StartLayout::WithoutVideos
-            | StartLayout::WithoutVideosAndDiscussions => iced::Length::Fixed(panel_w),
-            StartLayout::RecentAndWelcome | StartLayout::Compact => iced::Length::Fill,
-        })
-        .height(Fill)
-        .padding(20)
-        .style(|theme: &Theme| {
-            let palette = theme.palette();
-            container::Style {
-                background: Some(Background::Color(palette.background.weak.color)),
-                border: Border {
-                    color: palette.background.neutral.color,
-                    width: 1.0,
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .into()
-    };
-
-    let body: Element<'a, Message> = match start_layout {
-        StartLayout::AllPanels => {
-            iced::widget::row![recent, videos_panel, welcome, discussions_panel, supporters,]
-                .spacing(16)
-                .height(Fill)
-                .into()
-        }
-        StartLayout::WithoutVideos => {
-            iced::widget::row![recent, welcome, discussions_panel, supporters]
-                .spacing(16)
-                .height(Fill)
-                .into()
-        }
-        StartLayout::WithoutVideosAndDiscussions => iced::widget::row![recent, welcome, supporters]
+    let body: Element<'a, Message> = if compact {
+        column![welcome, recent].spacing(16).height(Fill).into()
+    } else {
+        iced::widget::row![recent, welcome]
             .spacing(16)
-            .height(Fill)
-            .into(),
-        StartLayout::RecentAndWelcome => iced::widget::row![recent, welcome]
-            .spacing(16)
-            .height(Fill)
-            .into(),
-        StartLayout::Compact => {
-            let tab_btn = |label: String, section: super::StartSection| {
-                let is_active = active == section;
-                button(text(label).size(14))
-                    .on_press(Message::StartSectionSelect(section))
-                    .padding([8, 18])
-                    .style(move |theme: &Theme, status| {
-                        let palette = theme.palette();
-                        let pair = match (is_active, status) {
-                            (true, _) => Some(palette.primary.weak),
-                            (false, button::Status::Hovered) => Some(palette.background.strong),
-                            _ => None,
-                        };
-                        button::Style {
-                            background: pair.map(|p| Background::Color(p.color)),
-                            text_color: pair
-                                .map(|p| p.text)
-                                .unwrap_or(crate::ui::style::readable::muted_text(theme)),
-                            border: Border {
-                                color: if is_active {
-                                    palette.primary.base.color
-                                } else {
-                                    Color::TRANSPARENT
-                                },
-                                width: if is_active { 1.0 } else { 0.0 },
-                                radius: 6.0.into(),
-                            },
-                            ..Default::default()
-                        }
-                    })
-            };
-            let tab_bar = Row::with_children(vec![
-                tab_btn(
-                    crate::tr!("start", "recent-files"),
-                    super::StartSection::Recent,
-                )
-                .into(),
-                tab_btn(crate::tr!("start", "videos"), super::StartSection::Videos).into(),
-                tab_btn(crate::tr!("start", "welcome"), super::StartSection::Welcome).into(),
-                tab_btn(
-                    crate::tr!("start", "discussions"),
-                    super::StartSection::Discussions,
-                )
-                .into(),
-                tab_btn(
-                    crate::tr!("start", "supporters"),
-                    super::StartSection::Supporters,
-                )
-                .into(),
-            ])
-            .spacing(6.0)
-            .align_y(iced::Center)
-            .wrap()
-            .vertical_spacing(0.0);
-            let section_body: Element<'a, Message> = match active {
-                super::StartSection::Recent => container(recent)
-                    .width(Fill)
-                    .height(Fill)
-                    .center_x(Fill)
-                    .into(),
-                super::StartSection::Videos => container(videos_panel)
-                    .width(Fill)
-                    .height(Fill)
-                    .center_x(Fill)
-                    .into(),
-                super::StartSection::Welcome => welcome.into(),
-                super::StartSection::Discussions => container(discussions_panel)
-                    .width(Fill)
-                    .height(Fill)
-                    .center_x(Fill)
-                    .into(),
-                super::StartSection::Supporters => container(supporters)
-                    .width(Fill)
-                    .height(Fill)
-                    .center_x(Fill)
-                    .into(),
-            };
-            column![
-                container(tab_bar).center_x(Fill),
-                Space::new().height(iced::Length::Fixed(12.0)),
-                section_body,
-            ]
-            .width(Fill)
             .height(Fill)
             .into()
-        }
     };
 
     container(body)
@@ -5171,9 +4552,7 @@ pub(super) fn recent_files_panel<'a>(
     width: iced::Length,
 ) -> Element<'a, Message> {
     use super::RecentView;
-    // Title mirrors the Supporters rail: size 15 in the bright text colour,
-    // followed by a 12px gap before the content. The view-mode toggles sit
-    // on the title's right.
+    // The view-mode toggles sit on the title's right.
     let mode_button = |icon: &'static [u8], mode: RecentView, tip: String| {
         let active = view == mode;
         iced::widget::tooltip(
@@ -5691,19 +5070,12 @@ mod tests {
     fn recent_limit_plus_step_survives_an_overflowing_input() {
         let _ = start_page_content(
             &[],
-            &[],
-            false,
-            &std::collections::HashMap::new(),
-            &[],
-            false,
-            &[],
             &std::collections::HashMap::new(),
             50,
             "18446744073709551615",
             super::super::RecentView::default(),
             800.0,
             std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
-            super::super::StartSection::default(),
             None,
         );
     }
@@ -5772,12 +5144,19 @@ impl OpenCADStudio {
         let selection = tab.scene.selection.borrow();
         let (vw, vh) = selection.view.vp_size;
         let input = &selection.input;
-        let cursor = (!input.pointer_away).then_some(input.last_move_pos).flatten();
+        let cursor = (!input.pointer_away)
+            .then_some(input.last_move_pos)
+            .flatten();
         let rect = if self.outline_switch_hover && tab.scene.model_tiles.borrow().len() > 1 {
             Some(tab.scene.active_model_tile_bounds(vw, vh))
         } else {
             tab.scene.hovered_model_pane_px(vw, vh, cursor)
         };
-        rect.map(|r| (r, f32::from(self.model_space.viewport_hover_opacity.min(100)) / 100.0))
+        rect.map(|r| {
+            (
+                r,
+                f32::from(self.model_space.viewport_hover_opacity.min(100)) / 100.0,
+            )
+        })
     }
 }

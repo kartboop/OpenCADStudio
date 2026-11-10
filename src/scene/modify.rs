@@ -1783,7 +1783,8 @@ impl Scene {
                 .map(std::sync::Arc::new);
             self.record_undo_before(handle, before);
             if let Some(EntityType::Surface(surface)) = self.document.get_entity_mut(handle) {
-                surface.acis_data = document::entities::AcisData::from_sat(&document.to_sat_string());
+                surface.acis_data =
+                    document::entities::AcisData::from_sat(&document.to_sat_string());
                 if let document::entities::SurfaceData::Swept { options, .. } =
                     &mut surface.surface_data
                 {
@@ -1862,179 +1863,13 @@ impl Scene {
                 .map(std::sync::Arc::new);
             self.record_undo_before(handle, before);
             if let Some(EntityType::Surface(surface)) = self.document.get_entity_mut(handle) {
-                surface.acis_data = document::entities::AcisData::from_sat(&document.to_sat_string());
+                surface.acis_data =
+                    document::entities::AcisData::from_sat(&document.to_sat_string());
                 surface.surface_data = fresh.surface_data;
                 surface.point_of_reference = fresh.point_of_reference;
             }
             self.register_prepared_solid_model(handle, body, display);
             rebuilt.push((handle, crate::scene::ChangeKind::Modified));
-        }
-        rebuilt
-    }
-
-    /// Associative extruded, revolved and lofted surfaces follow edits of
-    /// their sources: made again from them with the values they were made
-    /// with. A surface edited along with its sources keeps its own edit.
-    /// Returns the surfaces rebuilt.
-    pub(crate) fn refresh_associative_surfaces(
-        &mut self,
-        changes: &[(Handle, crate::scene::ChangeKind)],
-    ) -> Vec<(Handle, crate::scene::ChangeKind)> {
-        use crate::scene::model::surface_sources::{
-            axis_points, surface_sources, SurfaceSources, SURFACE_SOURCES_APP,
-        };
-        use crate::scene::model::sweep_model;
-        use document::objects::SolidHistoryOperation;
-        let changed = changes
-            .iter()
-            .filter(|(_, kind)| !matches!(kind, crate::scene::ChangeKind::Removed))
-            .map(|(handle, _)| *handle)
-            .collect::<rustc_hash::FxHashSet<_>>();
-        if changed.is_empty() || !self.document.app_ids.contains(SURFACE_SOURCES_APP) {
-            return Vec::new();
-        }
-        let linked = self
-            .document
-            .entities()
-            .filter(|entity| matches!(entity, EntityType::Surface(_)))
-            .filter_map(|entity| {
-                let handle = entity.common().handle;
-                let sources = surface_sources(entity)?;
-                (!changed.contains(&handle)
-                    && sources
-                        .handles()
-                        .iter()
-                        .any(|source| changed.contains(source)))
-                .then_some((handle, sources))
-            })
-            .collect::<Vec<_>>();
-        let mut rebuilt = Vec::new();
-        for (handle, sources) in linked {
-            let source = |handle: Handle| self.document.get_entity(handle).cloned();
-            // The surface made again: a history step, or a body with its data.
-            let made: Option<
-                Result<SolidHistoryOperation, (kernel::brep::Body, document::entities::SurfaceData)>,
-            > = match &sources {
-                SurfaceSources::Extrude {
-                    profile,
-                    height,
-                    direction,
-                    taper,
-                } => (|| {
-                    let entity = source(*profile)?;
-                    let (shape, _) = sweep_model::extrusion_profile_of(&entity)?;
-                    let direction = match direction {
-                        Some(direction) => *direction,
-                        None => glam::DVec3::from_array(shape.plane.normal()?) * *height,
-                    };
-                    if self.document.solid_history_operations(handle).is_some() {
-                        return sweep_model::extrusion_history(
-                            &entity,
-                            None,
-                            direction.to_array(),
-                            *taper,
-                            shape.plane.origin,
-                        )
-                        .map(Ok);
-                    }
-                    let body =
-                        sweep_model::extruded_surface(&entity, direction.to_array(), *taper)?;
-                    let EntityType::Surface(fresh) =
-                        crate::modules::insert::solid3d_cmds::empty_extruded_surface(
-                            direction, *taper,
-                        )
-                    else {
-                        return None;
-                    };
-                    Some(Err((body, fresh.surface_data)))
-                })(),
-                SurfaceSources::Revolve {
-                    profile,
-                    axis,
-                    start,
-                    end,
-                    angle,
-                    start_angle,
-                } => (|| {
-                    let entity = source(*profile)?;
-                    let (start, end) = axis
-                        .and_then(|axis| self.document.get_entity(axis).and_then(axis_points))
-                        .unwrap_or((*start, *end));
-                    let body = sweep_model::revolved_surface(
-                        &entity,
-                        start.to_array(),
-                        end.to_array(),
-                        *angle,
-                        *start_angle,
-                    )?;
-                    let EntityType::Surface(fresh) =
-                        crate::modules::insert::solid3d_cmds::empty_revolved_surface(
-                            &entity,
-                            start,
-                            end,
-                            *angle,
-                            *start_angle,
-                        )
-                    else {
-                        return None;
-                    };
-                    Some(Err((body, fresh.surface_data)))
-                })(),
-                SurfaceSources::Loft { sections } => (|| {
-                    let operations = self.document.solid_history_operations(handle)?;
-                    let mut record =
-                        operations
-                            .into_iter()
-                            .find_map(|operation| match operation {
-                                SolidHistoryOperation::Loft(record) => Some(record),
-                                _ => None,
-                            })?;
-                    if record.cross_sections.len() != sections.len() {
-                        return None;
-                    }
-                    record.cross_sections = sections
-                        .iter()
-                        .map(|section| {
-                            source(*section)
-                                .as_ref()
-                                .and_then(crate::scene::model::loft_command_model::embedded_section)
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some(Ok(SolidHistoryOperation::Loft(record)))
-                })(),
-            };
-            let before = self
-                .document
-                .get_entity(handle)
-                .cloned()
-                .map(std::sync::Arc::new);
-            match made {
-                Some(Ok(operation)) => {
-                    self.record_undo_before(handle, before);
-                    if self.rebuild_solid_history(handle, operation) {
-                        rebuilt.push((handle, crate::scene::ChangeKind::Modified));
-                    }
-                }
-                Some(Err((body, data))) => {
-                    let Some(document) = crate::scene::convert::acis_export::solid_to_sat(&body)
-                    else {
-                        continue;
-                    };
-                    let Some(display) = self.prepare_solid_model_display(handle, &body) else {
-                        continue;
-                    };
-                    self.record_undo_before(handle, before);
-                    if let Some(EntityType::Surface(surface)) = self.document.get_entity_mut(handle)
-                    {
-                        surface.acis_data =
-                            document::entities::AcisData::from_sat(&document.to_sat_string());
-                        surface.surface_data = data;
-                    }
-                    self.register_prepared_solid_model(handle, body, display);
-                    rebuilt.push((handle, crate::scene::ChangeKind::Modified));
-                }
-                None => {}
-            }
         }
         rebuilt
     }
@@ -2330,7 +2165,8 @@ impl Scene {
         match self.document.get_entity_mut(handle) {
             Some(EntityType::Solid3D(entity)) => entity.set_sat_document(&document),
             Some(EntityType::Surface(entity)) => {
-                entity.acis_data = document::entities::AcisData::from_sat(&document.to_sat_string());
+                entity.acis_data =
+                    document::entities::AcisData::from_sat(&document.to_sat_string());
                 if let Some(data) = surface_data {
                     if matches!(&data, document::entities::SurfaceData::Extruded { .. }) {
                         entity.kind = document::entities::SurfaceKind::Extruded;
@@ -2372,7 +2208,8 @@ impl Scene {
         match self.document.get_entity_mut(handle) {
             Some(EntityType::Solid3D(entity)) => entity.set_sat_document(&document),
             Some(EntityType::Surface(entity)) => {
-                entity.acis_data = document::entities::AcisData::from_sat(&document.to_sat_string());
+                entity.acis_data =
+                    document::entities::AcisData::from_sat(&document.to_sat_string());
                 if let Some(data) = surface_data {
                     if matches!(&data, document::entities::SurfaceData::Extruded { .. }) {
                         entity.kind = document::entities::SurfaceKind::Extruded;
@@ -2791,7 +2628,10 @@ impl Scene {
         }
         if grip_id == GROUP_GRIP_ID {
             if let GripApply::Translate(delta) = apply {
-                self.transform_entities(&[handle], &crate::command::EntityTransform::Translate(delta));
+                self.transform_entities(
+                    &[handle],
+                    &crate::command::EntityTransform::Translate(delta),
+                );
             }
             return;
         }
@@ -2963,7 +2803,10 @@ mod leader_annotation_reactor_tests {
     fn add_pair(scene: &mut Scene) -> (Handle, Handle) {
         let leader = scene.add_entity(EntityType::Leader(document::entities::Leader::default()));
         let annotation = scene.add_entity(EntityType::MText(Box::new(
-            document::entities::MText::with_value("note", document::types::Vector3::new(10.0, 5.0, 0.0)),
+            document::entities::MText::with_value(
+                "note",
+                document::types::Vector3::new(10.0, 5.0, 0.0),
+            ),
         )));
         (leader, annotation)
     }
@@ -4189,8 +4032,10 @@ mod copy_entities_subhandle_tests {
         .map(|e| doc.add_entity(e).unwrap())
         .collect();
 
-        let copies =
-            scene.copy_entities(&sources, &EntityTransform::Translate(DVec3::new(100.0, 0.0, 0.0)));
+        let copies = scene.copy_entities(
+            &sources,
+            &EntityTransform::Translate(DVec3::new(100.0, 0.0, 0.0)),
+        );
         assert_eq!(copies.len(), sources.len());
 
         let mut seen = std::collections::HashSet::new();
@@ -4199,7 +4044,10 @@ mod copy_entities_subhandle_tests {
             assert!(!subs.is_empty());
             for s in subs {
                 assert!(!s.is_null(), "sub-handle of {h:?} must be set");
-                assert!(seen.insert(s), "sub-handle {s:?} is shared between entities");
+                assert!(
+                    seen.insert(s),
+                    "sub-handle {s:?} is shared between entities"
+                );
             }
         }
     }
@@ -4210,9 +4058,15 @@ mod copy_entities_subhandle_tests {
     fn copied_polyfaces_keep_their_vertices_through_a_dwg_roundtrip() {
         let mut scene = Scene::new();
         let mesh = loaded_polyface(&mut scene.document);
-        let src = scene.document.add_entity(EntityType::PolyfaceMesh(mesh)).unwrap();
+        let src = scene
+            .document
+            .add_entity(EntityType::PolyfaceMesh(mesh))
+            .unwrap();
         for dx in [100.0, 200.0] {
-            scene.copy_entities(&[src], &EntityTransform::Translate(DVec3::new(dx, 0.0, 0.0)));
+            scene.copy_entities(
+                &[src],
+                &EntityTransform::Translate(DVec3::new(dx, 0.0, 0.0)),
+            );
         }
 
         let bytes = document::DwgWriter::write_to_vec(&scene.document).unwrap();
@@ -4381,7 +4235,9 @@ mod copy_field_tests {
         let mut scene = Scene::new();
         let src = scene
             .document
-            .add_entity(EntityType::MText(Box::new(document::entities::MText::new())))
+            .add_entity(EntityType::MText(
+                Box::new(document::entities::MText::new()),
+            ))
             .unwrap();
         let (root, text, child) = add_field_tree(&mut scene.document, src);
         scene
@@ -4409,15 +4265,18 @@ mod copy_field_tests {
     #[test]
     fn copied_insert_attribute_gets_its_own_field_tree() {
         let mut scene = Scene::new();
-        let mut insert = document::entities::Insert::new(
-            "TITLE".to_string(),
-            document::types::Vector3::ZERO,
-        );
-        insert.attributes.push(document::entities::AttributeEntity::new(
-            "CLIENT".to_string(),
-            "ACME".to_string(),
-        ));
-        let src = scene.document.add_entity(EntityType::Insert(insert)).unwrap();
+        let mut insert =
+            document::entities::Insert::new("TITLE".to_string(), document::types::Vector3::ZERO);
+        insert
+            .attributes
+            .push(document::entities::AttributeEntity::new(
+                "CLIENT".to_string(),
+                "ACME".to_string(),
+            ));
+        let src = scene
+            .document
+            .add_entity(EntityType::Insert(insert))
+            .unwrap();
         let src_attribute = match scene.document.get_entity(src) {
             Some(EntityType::Insert(ins)) => ins.attributes[0].common.handle,
             _ => unreachable!(),
@@ -4438,7 +4297,10 @@ mod copy_field_tests {
             other => panic!("expected the copied insert, got {other:?}"),
         };
         let copy_root = copy_root.expect("copied attribute has an extension dictionary");
-        assert_ne!(copy_root, root, "copied attribute shares the source's dictionary");
+        assert_ne!(
+            copy_root, root,
+            "copied attribute shares the source's dictionary"
+        );
         match scene.document.objects.get(&copy_root) {
             Some(ObjectType::Dictionary(d)) => assert_eq!(d.owner, copy_attribute),
             other => panic!("expected a dictionary, got {other:?}"),

@@ -1,6 +1,6 @@
 ---
 summary: Bevels the corner between two lines, or between two adjacent segments of a polyline, by two distances.
-related: FILLET, CHAMFEREDGE, TRIM, EXTEND
+related: FILLET, TRIM, EXTEND
 ribbon: Draw tab › Modify panel
 ---
 
@@ -25,5 +25,4 @@ ribbon: Draw tab › Modify panel
 - No trim works only with two separate lines, and needs at least one distance above 0.
 - If the distances are longer than the lines allow, you see "Distance is too large."
 - The Trim setting is shared with [`FILLET`](FILLET-Command).
-- If an edge of a 3D solid is selected when you start the command, `CHAMFER` chamfers the solid edge instead, as [`CHAMFEREDGE`](CHAMFEREDGE-Command) does.
 - On the ribbon, `CHAMFER` is in the Fillet drop-down.

@@ -1,23 +1,22 @@
 # Web App and Desktop Program
 
-Open CAD Studio runs as a desktop program (Windows, Linux, macOS) and as a web app at [opencadstudio.com](https://www.opencadstudio.com). Both are built from the same code: the drawing tools, the 2D and 3D editing, DWG and DXF reading and writing are the same. The differences come from what a browser allows.
+Both targets share the lightweight 2D drawing core and support the same main DWG/DXF editing workflows. Neither includes 3D authoring, plug-ins, node graphs, external automation endpoints, or update checks.
 
 | Area | Desktop | Web app |
-|---|---|---|
-| Installing | Installer or portable package | Nothing to install |
-| Opening drawings | File dialog, drag and drop, double-click in the file manager, recent files | The browser's file picker or drag and drop |
-| Saving | Saves to the file on disk; backups and autosave next to it | Saves as a download |
-| Windows | Every dialog and palette can be a window of its own | One page; dialogs and palettes float inside it |
-| Fonts | Stroke fonts, your system's TrueType fonts and font folders | Stroke fonts plus web fonts loaded on demand; a drawing's desktop font names are mapped to similar web fonts |
-| 3D modelling | Yes | Yes, the same |
-| Hatches, images, PDF and point-cloud underlays | Yes | Yes |
-| Printing | System printers and PDF | PDF |
-| Plugins | Yes, through the Plugin Manager | No |
-| Command scripts, command-line conversion, automation API | Yes | No |
-| File associations and thumbnails | Yes (installer) | No |
-| Update check | At start-up | Always the latest version |
-| Graphics | Vulkan, DirectX 12, Metal or OpenGL | WebGL2 |
+| --- | --- | --- |
+| Opening | Native file dialog, drag and drop, recent files, direct paths | Browser file picker or drag and drop |
+| Saving | Selected filesystem path, local backups and autosave | Browser download or an available file-system handle |
+| Windows | Native application window and in-app dialogs | One browser page with in-canvas dialogs |
+| Fonts | Stroke fonts and installed TrueType fonts | Embedded stroke fonts and bundled web fonts |
+| PDF and images | Supported import, underlay, and output workflows | Supported by the shared core and browser APIs |
+| Printing | System printing where supported, and PDF | PDF/browser-oriented output |
+| Graphics | Native wgpu backend | WebGL2 |
+| Processing | Native worker threads | Main thread plus the DWG/DXF Web Worker |
+| Native file associations and thumbnails | Supported | Not available |
+| Startup `--script` option | Supported | Not available; use `SCRIPT` in the app |
 
-Big drawings open faster on the desktop, which uses all processor cores; the web app parses drawings in a background worker.
+Desktop builds generally handle large drawings faster because they can use multiple processor cores. Web parsing and serialization use a worker to keep the page responsive.
 
-Settings you change in the web app are kept by the browser for that site.
+Browser settings and session data belong to the local site origin. Do not clear site data if you need to retain them.
+
+For build commands, see [Build and Start](Installation) or the source tree's main README.
